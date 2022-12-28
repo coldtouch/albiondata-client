@@ -28,4 +28,4 @@ RUN mkdir -p "$GOPATH/src" "$GOPATH/bin" && chmod -R 777 "$GOPATH"
 WORKDIR $GOPATH
 
 COPY . /usr/src/app
-RUN cd /usr/src/app && echo "meh" && make build-darwin
+RUN cd /usr/src/app && make build-darwin
