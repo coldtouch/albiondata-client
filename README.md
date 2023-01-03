@@ -1,9 +1,6 @@
 <!-- [![CircleCI](https://circleci.com/gh/broderickhyman/albiondata-client/tree/master.svg?style=svg)](https://circleci.com/gh/broderickhyman/albiondata-client/tree/master) [![Go Report Card](https://goreportcard.com/badge/github.com/broderickhyman/albiondata-client)](https://goreportcard.com/report/github.com/broderickhyman/albiondata-client)
 -->
 
-# THIS REPO IS ARCHIVED! THE ACTIVE REPO CAN BE FOUND [HERE](https://github.com/ao-data/albiondata-client)! (ao-data/albiondata-client)
-<br/><br/><br/><br/><br/><br/><br/><br/>
-
 # Albion Data - Client
 Distributed client for the [Albion Online Data](https://www.albion-online-data.com/)
 project.
@@ -43,6 +40,10 @@ Many thanks to the original developers:
 
 
 Many thanks also to [broderickhyman](https://github.com/broderickhyman) for picking up development and funding for the the last few years of the project!
+
+As of 2023-01-01, [Stanx](https://github.com/phendryx) is the primary maintainer and provides funding of the related projects.  
+
+[Walkynn](https://github.com/walkeralencar) has been a long time maintainer of different aspets of the project as well.
 
 # Downloads
 Downloads can be found here: https://github.com/ao-data/albiondata-client/releases
