@@ -48,6 +48,7 @@ As of 2023-01-01, [Stanx](https://github.com/phendryx) is the primary maintainer
 # Downloads
 Downloads can be found here: https://github.com/ao-data/albiondata-client/releases
 
+Stats for the client releases can be viewed [here](https://tooomm.github.io/github-release-stats/?username=ao-data&repository=albiondata-client).
 ## Running on Mac
 
 ### Running from the Finder
