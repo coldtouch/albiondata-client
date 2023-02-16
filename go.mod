@@ -35,3 +35,5 @@ require (
 	gopkg.in/toast.v1 v1.0.0-20180812000517-0a84660828b2
 	gopkg.in/yaml.v2 v2.3.0 // indirect
 )
+
+replace golang.org/x/sys => golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab
