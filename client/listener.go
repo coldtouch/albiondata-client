@@ -147,13 +147,19 @@ func (l *listener) stop() {
 
 func (l *listener) processPacket(packet gopacket.Packet) {
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
+	ipv4 := ipLayer.(*layers.IPv4)
 	if ipLayer != nil {
-		fmt.Println("IPv4 layer detected.")
-		ip, _ := ipLayer.(*layers.IPv4)
-		log.Debugf("Packet came from: %s", ip.SrcIP)
+		ipv4, _ = ipLayer.(*layers.IPv4)
+		log.Debugf("Packet came from: %s", ipv4.SrcIP)
+	}
+
+	if ipv4.SrcIP == nil {
+		log.Debug("No IPv4 detected")
+		return
 	}
 
 	layer := packet.Layer(photon.PhotonLayerType)
+
 
 	if layer == nil {
 		return
