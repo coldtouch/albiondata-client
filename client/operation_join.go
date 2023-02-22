@@ -21,6 +21,10 @@ type operationJoinResponse struct {
 func (op operationJoinResponse) Process(state *albionState) {
 	log.Debugf("Got JoinResponse operation...")
 
+	// Reset the AODataServerID here. This leads to a fresh execution
+	// of SetServerID() incase the player switched servers
+	state.AODataServerID = 0
+
 	loc, err := strconv.Atoi(op.Location)
 	if err != nil {
 		log.Debugf("Unable to convert zoneID to int. Probably an instance.")
