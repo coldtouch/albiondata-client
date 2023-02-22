@@ -1,5 +1,8 @@
 FROM multiarch/crossbuild:latest
 
+ARG GITHUB_REF_NAME
+ENV GITHUB_REF_NAME=$GITHUB_REF_NAME
+
 # gcc for cgo
 RUN apt-get update && apt-get install -y --no-install-recommends \
 		g++ \
@@ -28,4 +31,4 @@ RUN mkdir -p "$GOPATH/src" "$GOPATH/bin" && chmod -R 777 "$GOPATH"
 WORKDIR $GOPATH
 
 COPY . /usr/src/app
-RUN cd /usr/src/app && make build-darwin
+RUN cd /usr/src/app && GITHUB_REF_NAME=$GITHUB_REF_NAME make build-darwin
