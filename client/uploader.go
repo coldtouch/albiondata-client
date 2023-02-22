@@ -1,5 +1,5 @@
 package client
 
 type uploader interface {
-	sendToIngest(body []byte, topic string)
+	sendToIngest(body []byte, topic string, state *albionState)
 }
