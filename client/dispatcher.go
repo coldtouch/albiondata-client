@@ -65,8 +65,8 @@ func sendMsgToPublicUploaders(upload interface{}, topic string, state *albionSta
 		return
 	}
 
-	sendMsgToUploaders(data, topic, dis.publicUploaders)
-	sendMsgToUploaders(data, topic, dis.privateUploaders)
+	sendMsgToUploaders(data, topic, dis.publicUploaders, state)
+	sendMsgToUploaders(data, topic, dis.privateUploaders, state)
 
 	// If websockets are enabled, send the data there too
 	if ConfigGlobal.EnableWebsockets {
@@ -97,7 +97,7 @@ func sendMsgToPrivateUploaders(upload lib.PersonalizedUpload, topic string, stat
 	}
 
 	if len(dis.privateUploaders) > 0 {
-		sendMsgToUploaders(data, topic, dis.privateUploaders)
+		sendMsgToUploaders(data, topic, dis.privateUploaders, state)
 	}
 
 	// If websockets are enabled, send the data there too
@@ -106,14 +106,14 @@ func sendMsgToPrivateUploaders(upload lib.PersonalizedUpload, topic string, stat
 	}
 }
 
-func sendMsgToUploaders(msg []byte, topic string, uploaders []uploader) {
+func sendMsgToUploaders(msg []byte, topic string, uploaders []uploader,  state *albionState) {
 	if ConfigGlobal.DisableUpload {
 		log.Info("Upload is disabled.")
 		return
 	}
 
 	for _, u := range uploaders {
-		u.sendToIngest(msg, topic)
+		u.sendToIngest(msg, topic, state)
 	}
 }
 

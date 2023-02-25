@@ -29,10 +29,11 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.7.1
-	golang.org/x/crypto v0.0.0-20201016220609-9e8e0b390897 // indirect
-	golang.org/x/sys v0.0.0-20201101102859-da207088b7d1
-	golang.org/x/text v0.3.4 // indirect
+	golang.org/x/sys v0.5.0
+	golang.org/x/tools v0.6.0 // indirect
 	gopkg.in/ini.v1 v1.62.0 // indirect
 	gopkg.in/toast.v1 v1.0.0-20180812000517-0a84660828b2
 	gopkg.in/yaml.v2 v2.3.0 // indirect
 )
+
+replace golang.org/x/sys => golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab

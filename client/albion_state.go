@@ -4,6 +4,7 @@ import (
 	"github.com/broderickhyman/albiondata-client/lib"
 	"github.com/broderickhyman/albiondata-client/log"
 	"github.com/broderickhyman/albiondata-client/notification"
+	"strings"
 )
 
 //CacheSize limit size of messages in cache
@@ -20,6 +21,8 @@ type albionState struct {
 	LocationString string
 	CharacterId    lib.CharacterID
 	CharacterName  string
+	GameServerIP   string
+	AODataServerID int
 
 	// A lot of information is sent out but not contained in the response when requesting marketHistory (e.g. ID)
 	// This information is stored in marketHistoryInfo
@@ -45,4 +48,19 @@ func (state albionState) IsValidLocation() bool {
 		return false
 	}
 	return true
+}
+
+func (state albionState) SetServerID() int {
+	if state.AODataServerID == 0 {
+		if strings.HasPrefix(state.GameServerIP, "5.188.125.") {
+			log.Debugf("Set Albion Data Project Server ID to 1 (src: %v)", state.GameServerIP)
+			return 1
+		} else if strings.HasPrefix(state.GameServerIP, "5.45.187.") {
+			log.Debugf("Set Albion Data Project Server ID to 2 (src: %v)", state.GameServerIP)
+			return 2
+		}
+	} else {
+		return state.AODataServerID
+	}
+	return 0
 }
