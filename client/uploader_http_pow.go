@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
-	"io"
+	"io/ioutil"
 	"strconv"
 
 	"github.com/broderickhyman/albiondata-client/log"
@@ -97,7 +97,7 @@ func (u *httpUploaderPow) uploadWithPow(pow Pow, solution string, natsmsg []byte
 	}
 
 	if resp.StatusCode != 200 {
-		body, err := io.ReadAll(resp.Body)
+		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil { log.Fatal(err) }
 		log.Errorf("HTTP Error while prooving pow. returned: %v (%v)", resp.StatusCode, string(body))
 		return
