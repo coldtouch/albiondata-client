@@ -1,0 +1,40 @@
+# .github/workflows/test-build.yaml
+
+on:
+  release:
+    types: [push]
+
+jobs:
+  build-linux:
+    name: Build Linux Client
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.16
+    - name: Build
+      run: make build-linux
+  build-windows:
+    name: Build Windows Client
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.16
+    - name: Build
+      run: make build-windows
+    - uses: shogo82148/actions-upload-release-asset@v1
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: update-windows-amd64.exe.gz
+  build-darwin:
+    name: Build MacOS Client
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: ./scripts/build-and-copy-darwin.sh
