@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"strconv"
 
 	"github.com/broderickhyman/albiondata-client/log"
 )
@@ -69,13 +70,14 @@ func (u *httpUploaderPow) getPow(target interface{}) {
 // Prooves to the server that a pow was solved by submitting
 // the pow's key, the solution and a nats msg as a POST request
 // the topic becomes part of the URL
-func (u *httpUploaderPow) uploadWithPow(pow Pow, solution string, natsmsg []byte, topic string) {
+func (u *httpUploaderPow) uploadWithPow(pow Pow, solution string, natsmsg []byte, topic string, serverid int) {
 
 	fullURL := u.baseURL + "/pow/" + topic
 
 	resp, err := http.PostForm(fullURL, url.Values{
 		"key":      {pow.Key},
 		"solution": {solution},
+		"serverid": {strconv.Itoa(serverid)},
 		"natsmsg":  {string(natsmsg)},
 	})
 	defer resp.Body.Close()
@@ -136,5 +138,5 @@ func (u *httpUploaderPow) sendToIngest(body []byte, topic string, state *albionS
 	pow := Pow{}
 	u.getPow(&pow)
 	solution := solvePow(pow)
-	u.uploadWithPow(pow, solution, body, topic)
+	u.uploadWithPow(pow, solution, body, topic, state.AODataServerID)
 }
