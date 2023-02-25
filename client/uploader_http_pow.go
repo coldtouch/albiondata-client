@@ -48,7 +48,11 @@ func (u *httpUploaderPow) getPow(target interface{}) {
 	log.Debugf("GETTING POW")
 	fullURL := u.baseURL + "/pow"
 
-	resp, err := http.Get(fullURL)
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", fullURL, nil)
+	req.Header.Add("User-Agent", fmt.Sprintf("albiondata-client/%v", version))
+	resp, err := client.Do(req)
+
 	if err != nil {
 		log.Errorf("Error in Pow Get request: %v", err)
 		return
@@ -74,12 +78,16 @@ func (u *httpUploaderPow) uploadWithPow(pow Pow, solution string, natsmsg []byte
 
 	fullURL := u.baseURL + "/pow/" + topic
 
-	resp, err := http.PostForm(fullURL, url.Values{
+	client := &http.Client{}
+	data := url.Values{
 		"key":      {pow.Key},
 		"solution": {solution},
 		"serverid": {strconv.Itoa(serverid)},
 		"natsmsg":  {string(natsmsg)},
-	})
+	}
+	req, _ := http.NewRequest("POST", fullURL, strings.NewReader(data.Encode()))
+	req.Header.Add("User-Agent", fmt.Sprintf("albiondata-client/%v", version))
+	resp, err := client.Do(req)
 	defer resp.Body.Close()
 
 	if err != nil {
