@@ -150,11 +150,11 @@ func (l *listener) processPacket(packet gopacket.Packet) {
 	ipv4 := ipLayer.(*layers.IPv4)
 	if ipLayer != nil {
 		ipv4, _ = ipLayer.(*layers.IPv4)
-		log.Debugf("Packet came from: %s", ipv4.SrcIP)
+		log.Tracef("Packet came from: %s", ipv4.SrcIP)
 	}
 
 	if ipv4.SrcIP == nil {
-		log.Debug("No IPv4 detected")
+		log.Trace("No IPv4 detected")
 		return
 	}
 	l.router.albionstate.GameServerIP = ipv4.SrcIP.String()

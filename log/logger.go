@@ -73,6 +73,11 @@ func Debug(args ...interface{}) {
 	logger.Debug(args...)
 }
 
+// Trace logs a message at level Trace on the standard logger.
+func Trace(args ...interface{}) {
+	logger.Trace(args...)
+}
+
 // Print logs a message at level Info on the standard logger.
 func Print(args ...interface{}) {
 	logger.Print(args...)
@@ -113,6 +118,11 @@ func Debugf(format string, args ...interface{}) {
 	logger.Debugf(format, args...)
 }
 
+// Tracef logs a message at level Trace on the standard logger.
+func Tracef(format string, args ...interface{}) {
+	logger.Tracef(format, args...)
+}
+
 // Printf logs a message at level Info on the standard logger.
 func Printf(format string, args ...interface{}) {
 	logger.Printf(format, args...)
@@ -151,6 +161,11 @@ func Fatalf(format string, args ...interface{}) {
 // Debugln logs a message at level Debug on the standard logger.
 func Debugln(args ...interface{}) {
 	logger.Debugln(args...)
+}
+
+// Traceln logs a message at level Trace on the standard logger.
+func Traceln(args ...interface{}) {
+	logger.Traceln(args...)
 }
 
 // Println logs a message at level Info on the standard logger.

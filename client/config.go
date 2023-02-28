@@ -17,6 +17,7 @@ import (
 type config struct {
 	AllowedWSHosts                 []string
 	Debug                          bool
+	Trace                          bool
 	DebugEvents                    map[int]bool
 	DebugEventsString              string
 	DebugEventsBlacklistString     string
@@ -82,6 +83,13 @@ func (config *config) setupDebugFlags() {
 		"debug",
 		false,
 		"Enable debug logging.",
+	)
+
+	flag.BoolVar(
+		&config.Trace,
+		"trace",
+		false,
+		"Enable trace logging. Even more verbose than debug.",
 	)
 
 	flag.StringVar(
@@ -189,6 +197,9 @@ func (config *config) setupCommonFlags() {
 func (config *config) setupLogs() {
 	if config.Debug {
 		config.LogLevel = "DEBUG"
+	}
+	if config.Trace {
+		config.LogLevel = "TRACE"
 	}
 
 	level, err := logrus.ParseLevel(strings.ToLower(config.LogLevel))

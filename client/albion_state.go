@@ -53,10 +53,10 @@ func (state albionState) IsValidLocation() bool {
 func (state albionState) SetServerID() int {
 	if state.AODataServerID == 0 {
 		if strings.HasPrefix(state.GameServerIP, "5.188.125.") {
-			log.Debugf("Set Albion Data Project Server ID to 1 (src: %v)", state.GameServerIP)
+			log.Tracef("Set Albion Data Project Server ID to 1 (src: %v)", state.GameServerIP)
 			return 1
 		} else if strings.HasPrefix(state.GameServerIP, "5.45.187.") {
-			log.Debugf("Set Albion Data Project Server ID to 2 (src: %v)", state.GameServerIP)
+			log.Tracef("Set Albion Data Project Server ID to 2 (src: %v)", state.GameServerIP)
 			return 2
 		}
 	} else {
