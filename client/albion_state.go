@@ -8,7 +8,7 @@ import (
 )
 
 //CacheSize limit size of messages in cache
-const CacheSize = 256
+const CacheSize = 8192
 
 type marketHistoryInfo struct {
 	albionId  uint32
