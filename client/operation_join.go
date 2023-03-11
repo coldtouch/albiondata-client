@@ -2,6 +2,7 @@ package client
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/broderickhyman/albiondata-client/lib"
 	"github.com/broderickhyman/albiondata-client/log"
@@ -24,6 +25,11 @@ func (op operationJoinResponse) Process(state *albionState) {
 	// Reset the AODataServerID here. This leads to a fresh execution
 	// of SetServerID() incase the player switched servers
 	state.AODataServerID = 0
+
+	// Hack for second caerleon marketplace
+	if strings.HasSuffix(op.Location, "-Auction2") {
+		op.Location = strings.Replace(op.Location, "-Auction2", "", -1)
+	}
 
 	loc, err := strconv.Atoi(op.Location)
 	if err != nil {
