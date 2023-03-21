@@ -158,7 +158,8 @@ func (l *listener) processPacket(packet gopacket.Packet) {
 		return
 	}
 	l.router.albionstate.GameServerIP = ipv4.SrcIP.String()
-	l.router.albionstate.AODataServerID = l.router.albionstate.SetServerID()
+	l.router.albionstate.AODataServerID = l.router.albionstate.GetServerID()
+	log.Tracef("Server ID: %s", l.router.albionstate.AODataServerID)
 
 	layer := packet.Layer(photon.PhotonLayerType)
 

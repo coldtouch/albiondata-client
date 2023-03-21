@@ -10,10 +10,7 @@ import (
 	"github.com/broderickhyman/albiondata-client/log"
 )
 
-type dispatcher struct {
-	publicUploaders  []uploader
-	privateUploaders []uploader
-}
+type dispatcher struct {}
 
 var (
 	wsHub *WSHub
@@ -21,10 +18,7 @@ var (
 )
 
 func createDispatcher() {
-	dis = &dispatcher{
-		publicUploaders:  createUploaders(strings.Split(ConfigGlobal.PublicIngestBaseUrls, ",")),
-		privateUploaders: createUploaders(strings.Split(ConfigGlobal.PrivateIngestBaseUrls, ",")),
-	}
+	dis = &dispatcher{}
 
 	if ConfigGlobal.EnableWebsockets {
 		wsHub = newHub()
@@ -65,8 +59,11 @@ func sendMsgToPublicUploaders(upload interface{}, topic string, state *albionSta
 		return
 	}
 
-	sendMsgToUploaders(data, topic, dis.publicUploaders, state)
-	sendMsgToUploaders(data, topic, dis.privateUploaders, state)
+	var publicUploaders = createUploaders(strings.Split(ConfigGlobal.PublicIngestBaseUrls, ","))
+	var privateUploaders = createUploaders(strings.Split(ConfigGlobal.PrivateIngestBaseUrls, ","))
+
+	sendMsgToUploaders(data, topic, publicUploaders, state)
+	sendMsgToUploaders(data, topic, privateUploaders, state)
 
 	// If websockets are enabled, send the data there too
 	if ConfigGlobal.EnableWebsockets {
@@ -96,8 +93,9 @@ func sendMsgToPrivateUploaders(upload lib.PersonalizedUpload, topic string, stat
 		return
 	}
 
-	if len(dis.privateUploaders) > 0 {
-		sendMsgToUploaders(data, topic, dis.privateUploaders, state)
+	var privateUploaders = createUploaders(strings.Split(ConfigGlobal.PrivateIngestBaseUrls, ","))
+	if len(privateUploaders) > 0 {
+		sendMsgToUploaders(data, topic, privateUploaders, state)
 	}
 
 	// If websockets are enabled, send the data there too

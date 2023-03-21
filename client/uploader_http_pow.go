@@ -141,11 +141,6 @@ func solvePow(pow Pow) string {
 }
 
 func (u *httpUploaderPow) sendToIngest(body []byte, topic string, state *albionState) {
-	if state.AODataServerID != 1 {
-		log.Warningf("Only gamesserver 1 (Washington, D.C.) is supported for now. You are connected to %v and your updates will be ignored.", state.AODataServerID)
-		return
-	}
-
 	pow := Pow{}
 	u.getPow(&pow)
 	solution := solvePow(pow)
