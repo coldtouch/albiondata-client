@@ -20,8 +20,6 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 	switch OperationType(code) {
 	case opGetGameServerByCluster:
 		operation = &operationGetGameServerByCluster{}
-	case opChangeCluster:
-		operation = &operationGetGameServerByCluster{}
 	case opAuctionGetOffers:
 		operation = &operationAuctionGetOffers{}
 	case opAuctionGetItemAverageStats:
@@ -53,8 +51,6 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 	switch OperationType(code) {
 	case opJoin:
 		operation = &operationJoinResponse{}
-	case opChangeCluster:
-		operation = &operationGetGameServerByCluster{}
 	case opAuctionGetOffers:
 		operation = &operationAuctionGetOffersResponse{}
 	case opAuctionGetRequests:
