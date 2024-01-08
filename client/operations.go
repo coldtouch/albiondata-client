@@ -132,7 +132,6 @@ const (
 	opGetAttackInfo
 	opGetTerritorySeasonPoints
 	opGetAttackSchedule
-	opScheduleAttack
 	opGetMatches
 	opGetMatchDetails
 	opJoinMatch
@@ -463,7 +462,6 @@ const (
 	opGetPvpChallengeData
 	opClaimPvpChallengeWeeklyReward
 	opGetPersonalMightStats
-	opGetGvgSeasonGuildParticipationTime
 	opAuctionGetLoadoutOffers
 	opAuctionBuyLoadoutOffer
 	opAccountDeletionRequest
@@ -505,4 +503,10 @@ const (
 	opUseFindTrackSpellFromItemPrepare
 	opInteractWithTrackStart
 	opInteractWithTrackCancel
+	opTerritoryRaidStart
+	opTerritoryRaidCancel
+	opTerritoryClaimRaidedRawEnergyCrystalResult
+	opGvGSeasonPlayerGuildParticipationDetails
+	opDailyMightBonus
+	opClaimDailyMightBonus
 )

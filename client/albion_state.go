@@ -11,7 +11,7 @@ import (
 const CacheSize = 8192
 
 type marketHistoryInfo struct {
-	albionId  uint32
+	albionId  int32
 	timescale lib.Timescale
 	quality   uint8
 }

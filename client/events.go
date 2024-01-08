@@ -560,4 +560,15 @@ const (
 	evNewDynamicCompound
 	evLegendaryItemDestroyed
 	evAttunementInfo
+	evTerritoryClaimRaidedRawEnergyCrystalResult
+	evCarryPowerCrystalExpiryWarning
+	evPowerCrystalExpired
+	evTerritoryRaidStart
+	evTerritoryRaidCancel
+	evTerritoryRaidFinished
+	evTerritoryRaidResult
+	evTerritoryMonolithActiveRaidStatus
+	evTerritoryMonolithActiveRaidCancelled
+	evMonolithEnergyStorageUpdate
+	evMonolithNextScheduledOpenWorldAttackUpdate
 )
