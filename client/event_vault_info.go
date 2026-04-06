@@ -174,8 +174,8 @@ func tabNames(tabs []VaultTab) []string {
 // Only uses info within 30 seconds. Clears both after use.
 func GetCurrentVaultTabs() *VaultInfo {
 	now := time.Now()
-	guildFresh := currentGuildVaultInfo != nil && now.Sub(currentGuildVaultInfo.ReceivedAt) <= 30*time.Second
-	bankFresh := currentBankVaultInfo != nil && now.Sub(currentBankVaultInfo.ReceivedAt) <= 30*time.Second
+	guildFresh := currentGuildVaultInfo != nil && now.Sub(currentGuildVaultInfo.ReceivedAt) <= 60*time.Second
+	bankFresh := currentBankVaultInfo != nil && now.Sub(currentBankVaultInfo.ReceivedAt) <= 60*time.Second
 
 	var result *VaultInfo
 
@@ -192,9 +192,8 @@ func GetCurrentVaultTabs() *VaultInfo {
 		result = currentBankVaultInfo
 	}
 
-	// Clear both after use
-	currentGuildVaultInfo = nil
-	currentBankVaultInfo = nil
+	// Don't clear — multiple containers can open from the same vault.
+	// Vault info expires naturally via the 30-second freshness check.
 
 	if result != nil {
 		log.Infof("[VaultInfo] Using %s vault info with %d tabs", map[bool]string{true: "guild", false: "bank"}[result.IsGuild], len(result.Tabs))
