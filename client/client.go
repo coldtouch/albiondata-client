@@ -30,8 +30,9 @@ func (client *Client) Run() error {
 	// Load item name mapping for chest capture feature
 	LoadItemMap()
 
-	// Initialize VPS relay for chest captures (if token provided)
-	InitVPSRelay(ConfigGlobal.CaptureToken)
+	// Ensure capture token exists (check config, or run device auth flow)
+	captureToken := EnsureCaptureToken()
+	InitVPSRelay(captureToken)
 
 	createDispatcher()
 
