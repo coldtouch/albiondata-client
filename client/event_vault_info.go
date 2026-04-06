@@ -168,6 +168,31 @@ func tabNames(tabs []VaultTab) []string {
 	return names
 }
 
+// matchContainerToVaultTab checks if a container GUID matches any known vault tab GUID
+// Returns the tab name if matched, empty string if not
+func matchContainerToVaultTab(containerGUID string) string {
+	if containerGUID == "" {
+		return ""
+	}
+	// Check guild vault tabs
+	if currentGuildVaultInfo != nil {
+		for _, tab := range currentGuildVaultInfo.Tabs {
+			if tab.GUID != "" && tab.GUID == containerGUID {
+				return tab.Name
+			}
+		}
+	}
+	// Check bank vault tabs
+	if currentBankVaultInfo != nil {
+		for _, tab := range currentBankVaultInfo.Tabs {
+			if tab.GUID != "" && tab.GUID == containerGUID {
+				return tab.Name
+			}
+		}
+	}
+	return ""
+}
+
 // GetCurrentVaultTabs returns the best matching vault tab info.
 // Both guild and bank vault events can fire simultaneously when arriving at a location.
 // We pick the one with more tabs (guild chests have named tabs, bank default has 1).
