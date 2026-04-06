@@ -174,8 +174,11 @@ func tabNames(tabs []VaultTab) []string {
 // Only uses info within 30 seconds. Clears both after use.
 func GetCurrentVaultTabs() *VaultInfo {
 	now := time.Now()
-	guildFresh := currentGuildVaultInfo != nil && now.Sub(currentGuildVaultInfo.ReceivedAt) <= 60*time.Second
-	bankFresh := currentBankVaultInfo != nil && now.Sub(currentBankVaultInfo.ReceivedAt) <= 60*time.Second
+	// No time expiry — vault info stays until replaced by a new vault event.
+	// This handles the case where the player stands at a chest for minutes.
+	_ = now
+	guildFresh := currentGuildVaultInfo != nil
+	bankFresh := currentBankVaultInfo != nil
 
 	var result *VaultInfo
 
