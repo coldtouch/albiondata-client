@@ -121,6 +121,7 @@ type CapturedItem struct {
 type ContainerCapture struct {
 	Items       []CapturedItem `json:"items"`
 	ContainerID string         `json:"containerId"`
+	TabName     string         `json:"tabName,omitempty"`
 	VaultTabs   []VaultTab     `json:"vaultTabs,omitempty"`
 	IsGuild     bool           `json:"isGuild"`
 	PlayerName  string         `json:"playerName"`
@@ -133,6 +134,7 @@ type itemCollector struct {
 	mu           sync.Mutex
 	items        []CapturedItem
 	containerID  string
+	tabName      string
 	collecting   bool
 	timer        *time.Timer
 	lastCapture  *ContainerCapture
@@ -146,12 +148,19 @@ func (c *itemCollector) setContainerID(id string) {
 	c.containerID = id
 }
 
+func (c *itemCollector) setTabName(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tabName = name
+}
+
 func (c *itemCollector) startCollecting() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	// Reset for new container
 	c.items = nil
+	c.tabName = ""
 	c.collecting = true
 
 	// Auto-finalize after 3 seconds of no new items
@@ -205,6 +214,7 @@ func (c *itemCollector) finalize() {
 	capture := &ContainerCapture{
 		Items:       c.items,
 		ContainerID: c.containerID,
+		TabName:     c.tabName,
 		VaultTabs:   vaultTabs,
 		IsGuild:     isGuild,
 		CapturedAt:  time.Now().UnixMilli(),

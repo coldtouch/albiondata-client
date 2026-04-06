@@ -18,9 +18,32 @@ func (op operationContainerOpen) Process(state *albionState) {
 	for _, b := range op.ContainerGUID {
 		guid += fmt.Sprintf("%02x", byte(b))
 	}
-	log.Debugf("ContainerOpen: slot=%d guid=%s", op.ContainerSlot, guid)
+	log.Infof("[ContainerOpen] slot=%d guid=%s", op.ContainerSlot, guid)
+
+	// Try to match this container GUID against known vault tab GUIDs
+	matchedTab := matchContainerToVaultTab(guid)
+	if matchedTab != "" {
+		log.Infof("[ContainerOpen] Matched to vault tab: %s", matchedTab)
+	} else {
+		log.Infof("[ContainerOpen] No vault tab match found for guid=%s", guid)
+		// Log all known vault GUIDs for comparison
+		if currentGuildVaultInfo != nil {
+			for i, tab := range currentGuildVaultInfo.Tabs {
+				log.Infof("[ContainerOpen]   Guild tab %d: guid=%s name=%s", i, tab.GUID, tab.Name)
+			}
+		}
+		if currentBankVaultInfo != nil {
+			for i, tab := range currentBankVaultInfo.Tabs {
+				log.Infof("[ContainerOpen]   Bank tab %d: guid=%s name=%s", i, tab.GUID, tab.Name)
+			}
+		}
+	}
+
 	containerCollector.startCollecting()
 	containerCollector.setContainerID(guid)
+	if matchedTab != "" {
+		containerCollector.setTabName(matchedTab)
+	}
 }
 
 // operationContainerOpenResponse — server acknowledges the open
