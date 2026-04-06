@@ -197,11 +197,13 @@ func (c *itemCollector) finalize() {
 		countEquipment(c.items),
 		len(c.items)-countEquipment(c.items))
 
-	// TODO: Send to VPS via WebSocket relay
-	// For now just log the summary
+	// Log summary
 	for _, item := range c.items {
 		log.Infof("[ContainerCapture]   %s q%d x%d", item.ItemID, item.Quality, item.Quantity)
 	}
+
+	// Send to VPS via WebSocket relay
+	SendChestCapture(capture)
 }
 
 func countEquipment(items []CapturedItem) int {

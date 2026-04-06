@@ -69,6 +69,7 @@ type config struct {
 	PrintVersion                   bool
 	UpdateGithubOwner              string
 	UpdateGithubRepo               string
+	CaptureToken                   string // Token for authenticating with the private VPS relay
 }
 
 // config global config data
@@ -241,6 +242,13 @@ func (config *config) setupCommonFlags() {
 		"record",
 		"",
 		"Enable recording commands to a file for debugging later.",
+	)
+
+	flag.StringVar(
+		&config.CaptureToken,
+		"capture-token",
+		"",
+		"Token for authenticating with the Coldtouch Market Analyzer VPS. Get it from your Profile page.",
 	)
 }
 
