@@ -121,6 +121,8 @@ type CapturedItem struct {
 type ContainerCapture struct {
 	Items       []CapturedItem `json:"items"`
 	ContainerID string         `json:"containerId"`
+	VaultTabs   []VaultTab     `json:"vaultTabs,omitempty"`
+	IsGuild     bool           `json:"isGuild"`
 	PlayerName  string         `json:"playerName"`
 	Location    string         `json:"location"`
 	CapturedAt  int64          `json:"capturedAt"`
@@ -192,9 +194,19 @@ func (c *itemCollector) finalize() {
 		return
 	}
 
+	// Include vault tab info if available
+	var vaultTabs []VaultTab
+	var isGuild bool
+	if vi := GetCurrentVaultTabs(); vi != nil {
+		vaultTabs = vi.Tabs
+		isGuild = vi.IsGuild
+	}
+
 	capture := &ContainerCapture{
 		Items:       c.items,
 		ContainerID: c.containerID,
+		VaultTabs:   vaultTabs,
+		IsGuild:     isGuild,
 		CapturedAt:  time.Now().UnixMilli(),
 		ItemCount:   len(c.items),
 	}
