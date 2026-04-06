@@ -174,9 +174,10 @@ func GetCurrentVaultTabs() *VaultInfo {
 	if vi == nil {
 		return nil
 	}
-	// Only use vault info if it arrived within 10 seconds
-	if time.Since(vi.ReceivedAt) > 10*time.Second {
-		log.Debug("[VaultInfo] Stale vault info (>10s old), ignoring")
+	// Only use vault info if it arrived within 30 seconds
+	// (vault event fires on approach, items can take 5-15s to fully load + 2s finalize timer)
+	if time.Since(vi.ReceivedAt) > 30*time.Second {
+		log.Debug("[VaultInfo] Stale vault info (>30s old), ignoring")
 		currentVaultInfo = nil
 		return nil
 	}
