@@ -83,7 +83,10 @@ func parseVaultInfo(params map[string]interface{}, isGuild bool) *VaultInfo {
 	// param 2 = array of vault GUIDs ([][]int8, each 16 bytes)
 	var guids []string
 	if v, ok := params["2"]; ok {
+		log.Infof("[VaultInfo] param 2 type: %T", v)
 		guids = extractGUIDArray(v)
+	} else {
+		log.Info("[VaultInfo] param 2 not found in vault event")
 	}
 
 	// param 3 = array of vault names ([]string)
@@ -144,16 +147,44 @@ func extractGUIDArray(v interface{}) []string {
 	switch arr := v.(type) {
 	case []interface{}:
 		for _, item := range arr {
-			if byteArr, ok := item.([]int8); ok {
-				b := make([]byte, len(byteArr))
-				for i, v := range byteArr {
-					b[i] = byte(v)
-				}
-				guids = append(guids, hex.EncodeToString(b))
+			guid := extractSingleGUID(item)
+			if guid != "" {
+				guids = append(guids, guid)
 			}
 		}
+	case [][]int8:
+		for _, byteArr := range arr {
+			b := make([]byte, len(byteArr))
+			for i, v := range byteArr {
+				b[i] = byte(v)
+			}
+			guids = append(guids, hex.EncodeToString(b))
+		}
+	}
+	if len(guids) == 0 {
+		log.Infof("[VaultInfo] extractGUIDArray: no GUIDs parsed from type %T", v)
+	} else {
+		log.Infof("[VaultInfo] extractGUIDArray: parsed %d GUIDs", len(guids))
 	}
 	return guids
+}
+
+func extractSingleGUID(item interface{}) string {
+	switch v := item.(type) {
+	case []int8:
+		b := make([]byte, len(v))
+		for i, x := range v {
+			b[i] = byte(x)
+		}
+		return hex.EncodeToString(b)
+	case []byte:
+		return hex.EncodeToString(v)
+	case string:
+		return v
+	default:
+		log.Infof("[VaultInfo] extractSingleGUID: unknown type %T for GUID item", item)
+		return ""
+	}
 }
 
 func tabNames(tabs []VaultTab) []string {
