@@ -79,27 +79,55 @@ func (r *VPSRelay) connect() {
 		return
 	}
 
-	// Read auth response
-	_, msg, err := conn.ReadMessage()
-	if err != nil {
-		log.Debugf("[VPSRelay] Auth read failed: %v", err)
-		return
-	}
+	// Read messages until we get the auth response
+	// (server broadcasts NATS market data to all WS clients, so first messages may not be auth)
+	authTimeout := time.After(15 * time.Second)
+	authDone := make(chan bool, 1)
 
-	var resp map[string]interface{}
-	json.Unmarshal(msg, &resp)
-	if resp["type"] == "client-auth" && resp["success"] == true {
-		r.mu.Lock()
-		r.connected = true
-		r.mu.Unlock()
-		log.Info("[VPSRelay] Connected and authenticated to VPS")
-	} else {
-		log.Warnf("[VPSRelay] Auth failed: %s", string(msg))
+	go func() {
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				log.Debug("[VPSRelay] Connection lost during auth")
+				authDone <- false
+				return
+			}
+
+			var resp map[string]interface{}
+			if err := json.Unmarshal(msg, &resp); err != nil {
+				continue // Not JSON (raw NATS data), skip
+			}
+
+			if resp["type"] == "client-auth" {
+				if resp["success"] == true {
+					r.mu.Lock()
+					r.connected = true
+					r.mu.Unlock()
+					log.Infof("[VPSRelay] Authenticated as: %v", resp["username"])
+					authDone <- true
+				} else {
+					log.Warnf("[VPSRelay] Auth rejected: %v", resp["error"])
+					authDone <- false
+				}
+				return
+			}
+			// Ignore other messages during auth handshake
+		}
+	}()
+
+	select {
+	case success := <-authDone:
+		if !success {
+			conn.Close()
+			return
+		}
+	case <-authTimeout:
+		log.Warn("[VPSRelay] Auth timed out after 15s")
 		conn.Close()
 		return
 	}
 
-	// Keep connection alive — read messages (server might send commands)
+	// Keep connection alive — read and discard server messages
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {
