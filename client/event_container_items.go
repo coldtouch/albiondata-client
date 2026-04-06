@@ -120,6 +120,7 @@ type CapturedItem struct {
 
 type ContainerCapture struct {
 	Items       []CapturedItem `json:"items"`
+	ContainerID string         `json:"containerId"`
 	PlayerName  string         `json:"playerName"`
 	Location    string         `json:"location"`
 	CapturedAt  int64          `json:"capturedAt"`
@@ -129,12 +130,19 @@ type ContainerCapture struct {
 type itemCollector struct {
 	mu           sync.Mutex
 	items        []CapturedItem
+	containerID  string
 	collecting   bool
 	timer        *time.Timer
 	lastCapture  *ContainerCapture
 }
 
 var containerCollector = &itemCollector{}
+
+func (c *itemCollector) setContainerID(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.containerID = id
+}
 
 func (c *itemCollector) startCollecting() {
 	c.mu.Lock()
@@ -184,9 +192,10 @@ func (c *itemCollector) finalize() {
 	}
 
 	capture := &ContainerCapture{
-		Items:      c.items,
-		CapturedAt: time.Now().UnixMilli(),
-		ItemCount:  len(c.items),
+		Items:       c.items,
+		ContainerID: c.containerID,
+		CapturedAt:  time.Now().UnixMilli(),
+		ItemCount:   len(c.items),
 	}
 
 	c.lastCapture = capture
