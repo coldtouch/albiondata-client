@@ -33,6 +33,10 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		operation = &operationRealEstateGetAuctionData{}
 	case opRealEstateBidOnAuction:
 		operation = &operationRealEstateBidOnAuction{}
+	case opContainerOpen:
+		operation = &operationContainerOpen{}
+	case opContainerManageSubContainer:
+		operation = &operationContainerManageSubContainer{}
 	default:
 		return nil, nil
 	}
@@ -73,6 +77,10 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		operation = &operationRealEstateGetAuctionDataResponse{}
 	case opRealEstateBidOnAuction:
 		operation = &operationRealEstateBidOnAuctionResponse{}
+	case opContainerOpen:
+		operation = &operationContainerOpenResponse{}
+	case opContainerManageSubContainer:
+		operation = &operationContainerManageSubContainerResponse{}
 	default:
 		return nil, nil
 	}
