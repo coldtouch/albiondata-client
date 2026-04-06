@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/ao-data/albiondata-client/log"
 )
@@ -16,10 +17,11 @@ type VaultTab struct {
 
 // VaultInfo stores the tab structure for the current open vault
 type VaultInfo struct {
-	ObjectID  int64      `json:"objectId"`
-	Location  string     `json:"location"`
-	Tabs      []VaultTab `json:"tabs"`
-	IsGuild   bool       `json:"isGuild"`
+	ObjectID   int64      `json:"objectId"`
+	Location   string     `json:"location"`
+	Tabs       []VaultTab `json:"tabs"`
+	IsGuild    bool       `json:"isGuild"`
+	ReceivedAt time.Time  `json:"-"` // When this vault info was received
 }
 
 // Current vault info — updated when vault events fire
@@ -33,6 +35,7 @@ type eventGuildVaultInfo struct {
 func (event eventGuildVaultInfo) Process(state *albionState) {
 	vi := parseVaultInfo(event.RawParams, true)
 	if vi != nil {
+		vi.ReceivedAt = time.Now()
 		currentVaultInfo = vi
 		log.Infof("[GuildVault] %d tabs detected: %v", len(vi.Tabs), tabNames(vi.Tabs))
 	}
@@ -46,6 +49,7 @@ type eventBankVaultInfo struct {
 func (event eventBankVaultInfo) Process(state *albionState) {
 	vi := parseVaultInfo(event.RawParams, false)
 	if vi != nil {
+		vi.ReceivedAt = time.Now()
 		currentVaultInfo = vi
 		log.Infof("[BankVault] %d tabs detected: %v", len(vi.Tabs), tabNames(vi.Tabs))
 	}
@@ -163,7 +167,20 @@ func tabNames(tabs []VaultTab) []string {
 	return names
 }
 
-// GetCurrentVaultTabs returns the current vault tab info (for use by the collector)
+// GetCurrentVaultTabs returns the vault tab info if it arrived recently (within 10 seconds).
+// Clears the vault info after returning it to prevent stale data on the next capture.
 func GetCurrentVaultTabs() *VaultInfo {
-	return currentVaultInfo
+	vi := currentVaultInfo
+	if vi == nil {
+		return nil
+	}
+	// Only use vault info if it arrived within 10 seconds
+	if time.Since(vi.ReceivedAt) > 10*time.Second {
+		log.Debug("[VaultInfo] Stale vault info (>10s old), ignoring")
+		currentVaultInfo = nil
+		return nil
+	}
+	// Clear after use so it doesn't attach to the next unrelated chest
+	currentVaultInfo = nil
+	return vi
 }
