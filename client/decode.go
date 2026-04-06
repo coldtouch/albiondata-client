@@ -82,8 +82,6 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 	case opContainerManageSubContainer:
 		operation = &operationContainerManageSubContainerResponse{}
 	default:
-		// DEBUG: Log unhandled response opcodes
-		log.Infof("[DEBUG-RESPONSE] Unhandled response opcode: %d (0x%x)", code, code)
 		return nil, nil
 	}
 
@@ -117,8 +115,6 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 	case evNewJournalItem:
 		event = &eventNewJournalItem{}
 	default:
-		// DEBUG: Log ALL unhandled events to discover which ones fire when opening chests
-		log.Infof("[DEBUG-EVENT] Unhandled event code: %d (0x%x)", eventType, eventType)
 		return nil, nil
 	}
 
