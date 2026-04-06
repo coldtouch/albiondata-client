@@ -199,29 +199,29 @@ func tabNames(tabs []VaultTab) []string {
 	return names
 }
 
-// matchContainerToVaultTab checks if a container GUID matches any known vault tab GUID
-// Returns the tab name if matched, empty string if not
-func matchContainerToVaultTab(containerGUID string) string {
+// matchContainerToVaultTab checks if a container GUID matches any known vault tab GUID.
+// Returns (tabName, tabIndex) if matched, ("", -1) if not.
+func matchContainerToVaultTab(containerGUID string) (string, int) {
 	if containerGUID == "" {
-		return ""
+		return "", -1
 	}
 	// Check guild vault tabs
 	if currentGuildVaultInfo != nil {
-		for _, tab := range currentGuildVaultInfo.Tabs {
+		for i, tab := range currentGuildVaultInfo.Tabs {
 			if tab.GUID != "" && tab.GUID == containerGUID {
-				return tab.Name
+				return tab.Name, i
 			}
 		}
 	}
 	// Check bank vault tabs
 	if currentBankVaultInfo != nil {
-		for _, tab := range currentBankVaultInfo.Tabs {
+		for i, tab := range currentBankVaultInfo.Tabs {
 			if tab.GUID != "" && tab.GUID == containerGUID {
-				return tab.Name
+				return tab.Name, i
 			}
 		}
 	}
-	return ""
+	return "", -1
 }
 
 // GetCurrentVaultTabs returns the best matching vault tab info.

@@ -18,14 +18,21 @@ func (op operationContainerOpen) Process(state *albionState) {
 	for _, b := range op.ContainerGUID {
 		guid += fmt.Sprintf("%02x", byte(b))
 	}
-	log.Infof("[ContainerOpen] slot=%d guid=%s", op.ContainerSlot, guid)
+	log.Infof("[ContainerOpen] slot=%d guid=%s len=%d", op.ContainerSlot, guid, len(op.ContainerGUID))
+
+	// Reset tab index — this is the first (or only) tab being opened
+	containerCollector.resetTabIndex()
+	containerCollector.startCollecting()
+	containerCollector.setContainerID(guid)
 
 	// Try to match this container GUID against known vault tab GUIDs
-	matchedTab := matchContainerToVaultTab(guid)
-	if matchedTab != "" {
-		log.Infof("[ContainerOpen] Matched to vault tab: %s", matchedTab)
+	matchedName, matchedIdx := matchContainerToVaultTab(guid)
+	if matchedName != "" {
+		log.Infof("[ContainerOpen] Matched to vault tab %d: %s", matchedIdx, matchedName)
+		containerCollector.setTabName(matchedName)
+		containerCollector.setTabIndex(matchedIdx)
 	} else {
-		log.Infof("[ContainerOpen] No vault tab match found for guid=%s", guid)
+		log.Infof("[ContainerOpen] No vault tab GUID match — using tab index 0 (first tab)")
 		// Log all known vault GUIDs for comparison
 		if currentGuildVaultInfo != nil {
 			for i, tab := range currentGuildVaultInfo.Tabs {
@@ -38,12 +45,6 @@ func (op operationContainerOpen) Process(state *albionState) {
 			}
 		}
 	}
-
-	containerCollector.startCollecting()
-	containerCollector.setContainerID(guid)
-	if matchedTab != "" {
-		containerCollector.setTabName(matchedTab)
-	}
 }
 
 // operationContainerOpenResponse — server acknowledges the open
@@ -52,10 +53,16 @@ type operationContainerOpenResponse struct{}
 func (op operationContainerOpenResponse) Process(state *albionState) {}
 
 // operationContainerManageSubContainer — player switching tabs in a chest
+type operationContainerManageSubContainerRaw struct {
+	RawParams map[string]interface{} `mapstructure:",remain"`
+}
+
 type operationContainerManageSubContainer struct{}
 
 func (op operationContainerManageSubContainer) Process(state *albionState) {
-	log.Debug("ContainerManageSubContainer — tab switch, starting new collection")
+	log.Debug("ContainerManageSubContainer — tab switch")
+	// Increment tab index before starting new collection so finalize() sees correct index
+	containerCollector.incrementTabIndex()
 	containerCollector.startCollecting()
 }
 

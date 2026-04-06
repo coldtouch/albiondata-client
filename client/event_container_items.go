@@ -122,6 +122,7 @@ type ContainerCapture struct {
 	Items       []CapturedItem `json:"items"`
 	ContainerID string         `json:"containerId"`
 	TabName     string         `json:"tabName,omitempty"`
+	TabIndex    int            `json:"tabIndex"` // 0-based index into VaultTabs; -1 if unknown
 	VaultTabs   []VaultTab     `json:"vaultTabs,omitempty"`
 	IsGuild     bool           `json:"isGuild"`
 	PlayerName  string         `json:"playerName"`
@@ -131,13 +132,14 @@ type ContainerCapture struct {
 }
 
 type itemCollector struct {
-	mu           sync.Mutex
-	items        []CapturedItem
-	containerID  string
-	tabName      string
-	collecting   bool
-	timer        *time.Timer
-	lastCapture  *ContainerCapture
+	mu          sync.Mutex
+	items       []CapturedItem
+	containerID string
+	tabName     string
+	tabIndex    int // current tab index (0-based); set by ContainerOpen/ContainerManageSubContainer
+	collecting  bool
+	timer       *time.Timer
+	lastCapture *ContainerCapture
 }
 
 var containerCollector = &itemCollector{}
@@ -152,6 +154,24 @@ func (c *itemCollector) setTabName(name string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.tabName = name
+}
+
+func (c *itemCollector) resetTabIndex() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tabIndex = 0
+}
+
+func (c *itemCollector) incrementTabIndex() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tabIndex++
+}
+
+func (c *itemCollector) setTabIndex(idx int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tabIndex = idx
 }
 
 func (c *itemCollector) startCollecting() {
@@ -203,18 +223,27 @@ func (c *itemCollector) finalize() {
 		return
 	}
 
-	// Include vault tab info if available
+	// Resolve tab name: use direct GUID-matched name if set, otherwise look up by tabIndex
+	resolvedTabName := c.tabName
 	var vaultTabs []VaultTab
 	var isGuild bool
 	if vi := GetCurrentVaultTabs(); vi != nil {
 		vaultTabs = vi.Tabs
 		isGuild = vi.IsGuild
+		if resolvedTabName == "" && c.tabIndex >= 0 && c.tabIndex < len(vi.Tabs) {
+			name := vi.Tabs[c.tabIndex].Name
+			if name != "" {
+				resolvedTabName = name
+				log.Infof("[ContainerCapture] Resolved tab name from index %d: %s", c.tabIndex, resolvedTabName)
+			}
+		}
 	}
 
 	capture := &ContainerCapture{
 		Items:       c.items,
 		ContainerID: c.containerID,
-		TabName:     c.tabName,
+		TabName:     resolvedTabName,
+		TabIndex:    c.tabIndex,
 		VaultTabs:   vaultTabs,
 		IsGuild:     isGuild,
 		CapturedAt:  time.Now().UnixMilli(),
