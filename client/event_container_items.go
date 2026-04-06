@@ -167,8 +167,9 @@ func (c *itemCollector) addItem(item CapturedItem) {
 	defer c.mu.Unlock()
 
 	if !c.collecting {
-		// Start collecting if we get items without an explicit ContainerOpen
-		c.collecting = true
+		// Ignore item events that happen outside of an explicit ContainerOpen
+		// (zone loading, player equipment, bank proximity, etc.)
+		return
 	}
 
 	c.items = append(c.items, item)
