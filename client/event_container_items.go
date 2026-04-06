@@ -1,82 +1,215 @@
 package client
 
 import (
-	"encoding/json"
-	"fmt"
-	"reflect"
+	"sync"
+	"time"
 
 	"github.com/ao-data/albiondata-client/log"
 )
 
-// Debug helper to log all params for an event
-func logEventParams(eventName string, params map[string]interface{}) {
-	for key, val := range params {
-		valType := reflect.TypeOf(val)
-		var preview string
-		if valType != nil {
-			switch valType.Kind() {
-			case reflect.Slice:
-				sliceVal := reflect.ValueOf(val)
-				if sliceVal.Len() <= 5 {
-					jsonBytes, _ := json.Marshal(val)
-					preview = fmt.Sprintf("[%s] %s", valType.String(), string(jsonBytes))
-				} else {
-					first := sliceVal.Index(0).Interface()
-					preview = fmt.Sprintf("[%s len=%d first=%v]", valType.String(), sliceVal.Len(), first)
-				}
-			case reflect.String:
-				s := val.(string)
-				if len(s) > 100 {
-					preview = fmt.Sprintf("string(%d): %s...", len(s), s[:100])
-				} else {
-					preview = fmt.Sprintf("string: %q", s)
-				}
-			default:
-				preview = fmt.Sprintf("%v (%s)", val, valType.String())
-			}
-		} else {
-			preview = "nil"
-		}
-		log.Infof("[%s] param %s = %s", eventName, key, preview)
-	}
-}
+// === ITEM EVENT STRUCTS (typed from discovered Photon params) ===
 
-// eventNewSimpleItem fires when a simple (stackable) item appears in a container
+// eventNewSimpleItem fires for each stackable item in a container
 type eventNewSimpleItem struct {
-	RawParams map[string]interface{} `mapstructure:",remain"`
+	SlotPosition int16 `mapstructure:"0"` // Slot index in the container
+	ItemTypeID   int16 `mapstructure:"1"` // Numeric item type ID (map via itemmap.json)
+	Quantity     int8  `mapstructure:"2"` // Stack count
+	ObjectID     int64 `mapstructure:"4"` // Unique object instance ID
 }
 
 func (event eventNewSimpleItem) Process(state *albionState) {
-	log.Info("[Event] NewSimpleItem — stackable item in container")
-	logEventParams("NewSimpleItem", event.RawParams)
+	itemName := resolveItemName(int(event.ItemTypeID))
+	qty := int(event.Quantity)
+	if qty <= 0 {
+		qty = 1
+	}
+	log.Debugf("[SimpleItem] slot=%d item=%s (id=%d) qty=%d", event.SlotPosition, itemName, event.ItemTypeID, qty)
+
+	containerCollector.addItem(CapturedItem{
+		ItemID:      itemName,
+		NumericID:   int(event.ItemTypeID),
+		Quality:     1, // Simple items are always Normal quality
+		Quantity:    qty,
+		Enchantment: 0,
+		IsEquipment: false,
+		Slot:        int(event.SlotPosition),
+	})
 }
 
-// eventNewEquipmentItem fires when a gear item appears in a container
+// eventNewEquipmentItem fires for each gear item in a container
 type eventNewEquipmentItem struct {
-	RawParams map[string]interface{} `mapstructure:",remain"`
+	SlotPosition   int16    `mapstructure:"0"`  // Slot index
+	ItemTypeID     int16    `mapstructure:"1"`  // Numeric item type ID
+	Quality        int8     `mapstructure:"2"`  // 1=Normal, 2=Good, 3=Outstanding, 4=Excellent, 5=Masterpiece
+	ObjectID       int64    `mapstructure:"4"`  // Unique object instance ID
+	CrafterName    string   `mapstructure:"5"`  // Who crafted it
+	Enchantment    int8     `mapstructure:"6"`  // Enchantment level (0-4)
+	Durability     int64    `mapstructure:"7"`  // Current durability
+	SpellIDs       []int16  `mapstructure:"8"`  // Equipped spells
+	SocketData     []int16  `mapstructure:"9"`  // Socket info
+	UnknownParam10 int8     `mapstructure:"10"` // Always 0
 }
 
 func (event eventNewEquipmentItem) Process(state *albionState) {
-	log.Info("[Event] NewEquipmentItem — gear item in container")
-	logEventParams("NewEquipmentItem", event.RawParams)
+	itemName := resolveItemName(int(event.ItemTypeID))
+	qual := int(event.Quality)
+	if qual <= 0 {
+		qual = 1
+	}
+	log.Debugf("[EquipItem] slot=%d item=%s (id=%d) quality=%d crafter=%s", event.SlotPosition, itemName, event.ItemTypeID, qual, event.CrafterName)
+
+	containerCollector.addItem(CapturedItem{
+		ItemID:      itemName,
+		NumericID:   int(event.ItemTypeID),
+		Quality:     qual,
+		Quantity:    1, // Equipment is always qty 1
+		Enchantment: int(event.Enchantment),
+		IsEquipment: true,
+		Slot:        int(event.SlotPosition),
+		CrafterName: event.CrafterName,
+	})
 }
 
-// eventInventoryPutItem fires when an item is placed into a container slot
+// eventInventoryPutItem fires when an item is placed into a slot
 type eventInventoryPutItem struct {
-	RawParams map[string]interface{} `mapstructure:",remain"`
+	// Not needed for chest capture — items come via NewSimpleItem/NewEquipmentItem
 }
 
 func (event eventInventoryPutItem) Process(state *albionState) {
-	log.Info("[Event] InventoryPutItem — item placed in slot")
-	logEventParams("InventoryPutItem", event.RawParams)
+	// No-op — keeping handler registered to prevent debug spam
 }
 
-// eventNewJournalItem fires when a journal appears in a container
+// eventNewJournalItem fires for journal items in a container
 type eventNewJournalItem struct {
-	RawParams map[string]interface{} `mapstructure:",remain"`
+	SlotPosition int16 `mapstructure:"0"`
+	ItemTypeID   int16 `mapstructure:"1"`
+	Quantity     int8  `mapstructure:"2"`
 }
 
 func (event eventNewJournalItem) Process(state *albionState) {
-	log.Info("[Event] NewJournalItem — journal in container")
-	logEventParams("NewJournalItem", event.RawParams)
+	itemName := resolveItemName(int(event.ItemTypeID))
+	qty := int(event.Quantity)
+	if qty <= 0 {
+		qty = 1
+	}
+	log.Debugf("[JournalItem] slot=%d item=%s qty=%d", event.SlotPosition, itemName, qty)
+
+	containerCollector.addItem(CapturedItem{
+		ItemID:      itemName,
+		NumericID:   int(event.ItemTypeID),
+		Quality:     1,
+		Quantity:    qty,
+		IsEquipment: false,
+		Slot:        int(event.SlotPosition),
+	})
+}
+
+// === CONTAINER ITEM COLLECTOR ===
+// Collects items between ContainerOpen and a timeout/close, then bundles them
+
+type CapturedItem struct {
+	ItemID      string `json:"itemId"`
+	NumericID   int    `json:"numericId"`
+	Quality     int    `json:"quality"`
+	Quantity    int    `json:"quantity"`
+	Enchantment int    `json:"enchantment,omitempty"`
+	IsEquipment bool   `json:"isEquipment"`
+	Slot        int    `json:"slot"`
+	CrafterName string `json:"crafterName,omitempty"`
+}
+
+type ContainerCapture struct {
+	Items       []CapturedItem `json:"items"`
+	PlayerName  string         `json:"playerName"`
+	Location    string         `json:"location"`
+	CapturedAt  int64          `json:"capturedAt"`
+	ItemCount   int            `json:"itemCount"`
+}
+
+type itemCollector struct {
+	mu           sync.Mutex
+	items        []CapturedItem
+	collecting   bool
+	timer        *time.Timer
+	lastCapture  *ContainerCapture
+}
+
+var containerCollector = &itemCollector{}
+
+func (c *itemCollector) startCollecting() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Reset for new container
+	c.items = nil
+	c.collecting = true
+
+	// Auto-finalize after 3 seconds of no new items
+	// (server sends all items in rapid burst, then stops)
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	c.timer = time.AfterFunc(3*time.Second, func() {
+		c.finalize()
+	})
+}
+
+func (c *itemCollector) addItem(item CapturedItem) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.collecting {
+		// Start collecting if we get items without an explicit ContainerOpen
+		c.collecting = true
+	}
+
+	c.items = append(c.items, item)
+
+	// Reset the timer — more items might be coming
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	c.timer = time.AfterFunc(2*time.Second, func() {
+		c.finalize()
+	})
+}
+
+func (c *itemCollector) finalize() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.collecting || len(c.items) == 0 {
+		c.collecting = false
+		return
+	}
+
+	capture := &ContainerCapture{
+		Items:      c.items,
+		CapturedAt: time.Now().UnixMilli(),
+		ItemCount:  len(c.items),
+	}
+
+	c.lastCapture = capture
+	c.collecting = false
+
+	log.Infof("[ContainerCapture] Captured %d items (%d equipment, %d stackable)",
+		len(c.items),
+		countEquipment(c.items),
+		len(c.items)-countEquipment(c.items))
+
+	// TODO: Send to VPS via WebSocket relay
+	// For now just log the summary
+	for _, item := range c.items {
+		log.Infof("[ContainerCapture]   %s q%d x%d", item.ItemID, item.Quality, item.Quantity)
+	}
+}
+
+func countEquipment(items []CapturedItem) int {
+	count := 0
+	for _, item := range items {
+		if item.IsEquipment {
+			count++
+		}
+	}
+	return count
 }

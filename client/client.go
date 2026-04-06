@@ -27,6 +27,9 @@ func (client *Client) Run() error {
 	ConfigGlobal.setupDebugEvents()
 	ConfigGlobal.setupDebugOperations()
 
+	// Load item name mapping for chest capture feature
+	LoadItemMap()
+
 	createDispatcher()
 
 	if ConfigGlobal.Offline {
