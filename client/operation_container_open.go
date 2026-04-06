@@ -52,18 +52,41 @@ type operationContainerOpenResponse struct{}
 
 func (op operationContainerOpenResponse) Process(state *albionState) {}
 
-// operationContainerManageSubContainer — player switching tabs in a chest
-type operationContainerManageSubContainerRaw struct {
+// operationContainerManageSubContainer — player switching tabs in a chest.
+// Param layout mirrors ContainerOpen: param 0 = slot, param 2 = target tab GUID.
+type operationContainerManageSubContainer struct {
+	ContainerSlot int8   `mapstructure:"0"`
+	ContainerGUID []int8 `mapstructure:"2"`
+	// Capture all params so we can log unknown ones during debugging
 	RawParams map[string]interface{} `mapstructure:",remain"`
 }
 
-type operationContainerManageSubContainer struct{}
-
 func (op operationContainerManageSubContainer) Process(state *albionState) {
-	log.Debug("ContainerManageSubContainer — tab switch")
-	// Increment tab index before starting new collection so finalize() sees correct index
+	guid := ""
+	for _, b := range op.ContainerGUID {
+		guid += fmt.Sprintf("%02x", byte(b))
+	}
+	log.Infof("[ContainerManageSubContainer] slot=%d guid=%s len=%d extra=%v",
+		op.ContainerSlot, guid, len(op.ContainerGUID), op.RawParams)
+
+	// Try GUID matching first — gives the exact tab regardless of click order
+	matchedName, matchedIdx := matchContainerToVaultTab(guid)
+	if matchedName != "" {
+		log.Infof("[ContainerManageSubContainer] Matched vault tab %d: %s", matchedIdx, matchedName)
+		containerCollector.setTabIndex(matchedIdx)
+		containerCollector.startCollecting()
+		containerCollector.setContainerID(guid)
+		containerCollector.setTabName(matchedName)
+		return
+	}
+
+	// No GUID match — fall back to incrementing the sequential counter
+	log.Infof("[ContainerManageSubContainer] No GUID match — incrementing tab index")
 	containerCollector.incrementTabIndex()
 	containerCollector.startCollecting()
+	if guid != "" {
+		containerCollector.setContainerID(guid)
+	}
 }
 
 type operationContainerManageSubContainerResponse struct{}
