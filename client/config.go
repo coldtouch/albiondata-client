@@ -118,6 +118,11 @@ func (config *config) setupWebsocketFlags() {
 	config.EnableWebsockets = viper.GetBool("EnableWebsockets")
 	config.AllowedWSHosts = viper.GetStringSlice("AllowedWebsocketHosts")
 
+	// Load capture token from config file (so users don't need --capture-token every time)
+	if viper.IsSet("CaptureToken") && config.CaptureToken == "" {
+		config.CaptureToken = viper.GetString("CaptureToken")
+	}
+
 	// // Keeping for local development, but commenting out so it's not live.
 	// // Read update configuration (use defaults if not specified)
 	// if viper.IsSet("UpdateGithubOwner") {
