@@ -24,8 +24,9 @@ type VaultInfo struct {
 	ReceivedAt time.Time  `json:"-"` // When this vault info was received
 }
 
-// Current vault info — updated when vault events fire
-var currentVaultInfo *VaultInfo
+// Separate vault info for guild and bank — both can fire simultaneously
+var currentGuildVaultInfo *VaultInfo
+var currentBankVaultInfo *VaultInfo
 
 // eventGuildVaultInfo fires when approaching/opening a guild chest
 type eventGuildVaultInfo struct {
@@ -36,7 +37,7 @@ func (event eventGuildVaultInfo) Process(state *albionState) {
 	vi := parseVaultInfo(event.RawParams, true)
 	if vi != nil {
 		vi.ReceivedAt = time.Now()
-		currentVaultInfo = vi
+		currentGuildVaultInfo = vi
 		log.Infof("[GuildVault] %d tabs detected: %v", len(vi.Tabs), tabNames(vi.Tabs))
 	}
 }
@@ -50,7 +51,7 @@ func (event eventBankVaultInfo) Process(state *albionState) {
 	vi := parseVaultInfo(event.RawParams, false)
 	if vi != nil {
 		vi.ReceivedAt = time.Now()
-		currentVaultInfo = vi
+		currentBankVaultInfo = vi
 		log.Infof("[BankVault] %d tabs detected: %v", len(vi.Tabs), tabNames(vi.Tabs))
 	}
 }
@@ -167,21 +168,37 @@ func tabNames(tabs []VaultTab) []string {
 	return names
 }
 
-// GetCurrentVaultTabs returns the vault tab info if it arrived recently (within 10 seconds).
-// Clears the vault info after returning it to prevent stale data on the next capture.
+// GetCurrentVaultTabs returns the best matching vault tab info.
+// Both guild and bank vault events can fire simultaneously when arriving at a location.
+// We pick the one with more tabs (guild chests have named tabs, bank default has 1).
+// Only uses info within 30 seconds. Clears both after use.
 func GetCurrentVaultTabs() *VaultInfo {
-	vi := currentVaultInfo
-	if vi == nil {
-		return nil
+	now := time.Now()
+	guildFresh := currentGuildVaultInfo != nil && now.Sub(currentGuildVaultInfo.ReceivedAt) <= 30*time.Second
+	bankFresh := currentBankVaultInfo != nil && now.Sub(currentBankVaultInfo.ReceivedAt) <= 30*time.Second
+
+	var result *VaultInfo
+
+	if guildFresh && bankFresh {
+		// Both fresh — pick the one with more tabs (guild chest has real tab names)
+		if len(currentGuildVaultInfo.Tabs) >= len(currentBankVaultInfo.Tabs) {
+			result = currentGuildVaultInfo
+		} else {
+			result = currentBankVaultInfo
+		}
+	} else if guildFresh {
+		result = currentGuildVaultInfo
+	} else if bankFresh {
+		result = currentBankVaultInfo
 	}
-	// Only use vault info if it arrived within 30 seconds
-	// (vault event fires on approach, items can take 5-15s to fully load + 2s finalize timer)
-	if time.Since(vi.ReceivedAt) > 30*time.Second {
-		log.Debug("[VaultInfo] Stale vault info (>30s old), ignoring")
-		currentVaultInfo = nil
-		return nil
+
+	// Clear both after use
+	currentGuildVaultInfo = nil
+	currentBankVaultInfo = nil
+
+	if result != nil {
+		log.Infof("[VaultInfo] Using %s vault info with %d tabs", map[bool]string{true: "guild", false: "bank"}[result.IsGuild], len(result.Tabs))
 	}
-	// Clear after use so it doesn't attach to the next unrelated chest
-	currentVaultInfo = nil
-	return vi
+
+	return result
 }
