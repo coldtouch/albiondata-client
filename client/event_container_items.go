@@ -203,6 +203,13 @@ func (c *itemCollector) addItem(item CapturedItem) {
 		return
 	}
 
+	// Skip internal/currency items (silver, gold, fame credits, etc.)
+	// These have negative numeric IDs and aren't tradable on the market
+	if IsSpecialItem(item.NumericID) {
+		log.Debugf("[ItemCollector] Skipping special item: %s (id=%d)", item.ItemID, item.NumericID)
+		return
+	}
+
 	c.items = append(c.items, item)
 
 	// Reset the timer — more items might be coming

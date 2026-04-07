@@ -11,6 +11,26 @@ import (
 
 var itemNameMap map[string]string
 
+// specialItemNames maps negative/internal numeric IDs to human-readable names.
+// These IDs are assigned by the Photon protocol at runtime and are not in ao-bin-dumps.
+var specialItemNames = map[int]string{
+	-1: "SILVER",
+	-2: "GOLD",
+	-3: "FAME_CREDIT",
+	-4: "FAME_CREDIT_PREMIUM",
+	-5: "FACTION_TOKEN",
+	-6: "SILVER_POUCH",
+	-7: "GOLD_POUCH",
+	-8: "TOME_OF_INSIGHT",
+	-9: "SEASONAL_TOKEN",
+}
+
+// IsSpecialItem returns true for internal/currency items that aren't tradable on the market
+func IsSpecialItem(numericID int) bool {
+	_, ok := specialItemNames[numericID]
+	return ok
+}
+
 func init() {
 	itemNameMap = make(map[string]string)
 }
@@ -44,6 +64,10 @@ func LoadItemMap() {
 
 // resolveItemName converts a numeric item type ID to a string name like "T8_2H_NATURESTAFF@3"
 func resolveItemName(numericID int) string {
+	// Check special/internal items first (negative IDs)
+	if name, ok := specialItemNames[numericID]; ok {
+		return name
+	}
 	key := fmt.Sprintf("%d", numericID)
 	if name, ok := itemNameMap[key]; ok {
 		return name
