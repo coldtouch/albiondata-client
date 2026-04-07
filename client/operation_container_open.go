@@ -20,6 +20,11 @@ func (op operationContainerOpen) Process(state *albionState) {
 	}
 	log.Infof("[ContainerOpen] slot=%d guid=%s len=%d", op.ContainerSlot, guid, len(op.ContainerGUID))
 
+	if !ConfigGlobal.CaptureEnabled {
+		log.Debug("[ContainerOpen] Capture disabled — ignoring")
+		return
+	}
+
 	// Reset tab index — this is the first (or only) tab being opened
 	containerCollector.resetTabIndex()
 	containerCollector.startCollecting()
@@ -68,6 +73,10 @@ func (op operationContainerManageSubContainer) Process(state *albionState) {
 	}
 	log.Infof("[ContainerManageSubContainer] slot=%d guid=%s len=%d extra=%v",
 		op.ContainerSlot, guid, len(op.ContainerGUID), op.RawParams)
+
+	if !ConfigGlobal.CaptureEnabled {
+		return
+	}
 
 	// Try GUID matching first — gives the exact tab regardless of click order
 	matchedName, matchedIdx := matchContainerToVaultTab(guid)

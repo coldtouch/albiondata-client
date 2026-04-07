@@ -70,11 +70,13 @@ type config struct {
 	UpdateGithubOwner              string
 	UpdateGithubRepo               string
 	CaptureToken                   string // Token for authenticating with the private VPS relay
+	CaptureEnabled                 bool   // When false, chest captures are ignored (toggled via config or CLI)
 }
 
 // config global config data
 var ConfigGlobal = &config{
 	LogLevel:          "INFO",
+	CaptureEnabled:    true,
 	UpdateGithubOwner: "ao-data",
 	UpdateGithubRepo:  "albiondata-client"}
 
@@ -121,6 +123,11 @@ func (config *config) setupWebsocketFlags() {
 	// Load capture token from config file (so users don't need --capture-token every time)
 	if viper.IsSet("CaptureToken") && config.CaptureToken == "" {
 		config.CaptureToken = viper.GetString("CaptureToken")
+	}
+
+	// Load capture enabled setting from config file (defaults to true)
+	if viper.IsSet("CaptureEnabled") {
+		config.CaptureEnabled = viper.GetBool("CaptureEnabled")
 	}
 
 	// // Keeping for local development, but commenting out so it's not live.
@@ -254,6 +261,13 @@ func (config *config) setupCommonFlags() {
 		"capture-token",
 		"",
 		"Token for authenticating with the Coldtouch Market Analyzer VPS. Get it from your Profile page.",
+	)
+
+	flag.BoolVar(
+		&config.CaptureEnabled,
+		"capture",
+		true,
+		"Enable chest capture mode. Set to false to disable chest/tab scanning.",
 	)
 }
 
