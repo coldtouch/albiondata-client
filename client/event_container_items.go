@@ -176,7 +176,15 @@ func (c *itemCollector) setTabIndex(idx int) {
 
 func (c *itemCollector) startCollecting() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+
+	// If we already have items from a previous tab, finalize them first
+	// This handles rapid tab switching where the user clicks tabs faster than the timeout
+	if c.collecting && len(c.items) > 0 {
+		if c.timer != nil {
+			c.timer.Stop()
+		}
+		c.finalizeUnlocked() // sends previous tab's capture while we hold the lock
+	}
 
 	// Reset for new container
 	c.items = nil
@@ -191,6 +199,8 @@ func (c *itemCollector) startCollecting() {
 	c.timer = time.AfterFunc(3*time.Second, func() {
 		c.finalize()
 	})
+
+	c.mu.Unlock()
 }
 
 func (c *itemCollector) addItem(item CapturedItem) {
@@ -224,7 +234,11 @@ func (c *itemCollector) addItem(item CapturedItem) {
 func (c *itemCollector) finalize() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.finalizeUnlocked()
+}
 
+// finalizeUnlocked does the actual finalization work. Caller must hold c.mu.
+func (c *itemCollector) finalizeUnlocked() {
 	if !c.collecting || len(c.items) == 0 {
 		c.collecting = false
 		return
@@ -265,8 +279,12 @@ func (c *itemCollector) finalize() {
 		countEquipment(c.items),
 		len(c.items)-countEquipment(c.items))
 
-	// Log summary
-	for _, item := range c.items {
+	// Log first 10 items as summary (avoid flooding logs for large tabs)
+	for i, item := range c.items {
+		if i >= 10 {
+			log.Infof("[ContainerCapture]   ... and %d more items", len(c.items)-10)
+			break
+		}
 		log.Infof("[ContainerCapture]   %s q%d x%d", item.ItemID, item.Quality, item.Quantity)
 	}
 

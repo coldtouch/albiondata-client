@@ -25,10 +25,10 @@ var specialItemNames = map[int]string{
 	-9: "SEASONAL_TOKEN",
 }
 
-// IsSpecialItem returns true for internal/currency items that aren't tradable on the market
+// IsSpecialItem returns true for internal/currency items that aren't tradable on the market.
+// All negative numeric IDs are internal system items (silver, gold, fame, tokens, essences, etc.)
 func IsSpecialItem(numericID int) bool {
-	_, ok := specialItemNames[numericID]
-	return ok
+	return numericID < 0
 }
 
 func init() {

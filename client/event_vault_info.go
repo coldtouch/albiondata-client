@@ -224,39 +224,46 @@ func matchContainerToVaultTab(containerGUID string) (string, int) {
 	return "", -1
 }
 
-// GetCurrentVaultTabs returns the best matching vault tab info.
-// Both guild and bank vault events can fire simultaneously when arriving at a location.
-// We pick the one with more tabs (guild chests have named tabs, bank default has 1).
-// Only uses info within 30 seconds. Clears both after use.
+// GetCurrentVaultTabs returns the combined vault tab info.
+// Guild island chests fire BOTH GuildVaultInfo (guild tabs) and BankVaultInfo (personal bank tab).
+// We merge them so all tabs (guild + personal) are in one list for GUID matching.
 func GetCurrentVaultTabs() *VaultInfo {
-	now := time.Now()
-	// No time expiry — vault info stays until replaced by a new vault event.
-	// This handles the case where the player stands at a chest for minutes.
-	_ = now
 	guildFresh := currentGuildVaultInfo != nil
 	bankFresh := currentBankVaultInfo != nil
 
-	var result *VaultInfo
-
 	if guildFresh && bankFresh {
-		// Both fresh — pick the one with more tabs (guild chest has real tab names)
-		if len(currentGuildVaultInfo.Tabs) >= len(currentBankVaultInfo.Tabs) {
-			result = currentGuildVaultInfo
-		} else {
-			result = currentBankVaultInfo
+		// Merge: guild tabs + bank tabs into one combined VaultInfo
+		merged := &VaultInfo{
+			ObjectID: currentGuildVaultInfo.ObjectID,
+			Location: currentGuildVaultInfo.Location,
+			IsGuild:  true,
+			Tabs:     make([]VaultTab, 0, len(currentGuildVaultInfo.Tabs)+len(currentBankVaultInfo.Tabs)),
 		}
+		merged.Tabs = append(merged.Tabs, currentGuildVaultInfo.Tabs...)
+		// Append bank tabs with friendly name for the default bank tab
+		for _, tab := range currentBankVaultInfo.Tabs {
+			bankTab := tab
+			if bankTab.Name == "@BUILDINGS_T1_BANK" || bankTab.Name == "" {
+				bankTab.Name = "Bank"
+			}
+			merged.Tabs = append(merged.Tabs, bankTab)
+		}
+		log.Infof("[VaultInfo] Using merged vault info with %d tabs (%d guild + %d bank)",
+			len(merged.Tabs), len(currentGuildVaultInfo.Tabs), len(currentBankVaultInfo.Tabs))
+		return merged
 	} else if guildFresh {
-		result = currentGuildVaultInfo
+		log.Infof("[VaultInfo] Using guild vault info with %d tabs", len(currentGuildVaultInfo.Tabs))
+		return currentGuildVaultInfo
 	} else if bankFresh {
-		result = currentBankVaultInfo
+		// Rename default bank tab
+		for i, tab := range currentBankVaultInfo.Tabs {
+			if tab.Name == "@BUILDINGS_T1_BANK" || tab.Name == "" {
+				currentBankVaultInfo.Tabs[i].Name = "Bank"
+			}
+		}
+		log.Infof("[VaultInfo] Using bank vault info with %d tabs", len(currentBankVaultInfo.Tabs))
+		return currentBankVaultInfo
 	}
 
-	// Don't clear — multiple containers can open from the same vault.
-	// Vault info expires naturally via the 30-second freshness check.
-
-	if result != nil {
-		log.Infof("[VaultInfo] Using %s vault info with %d tabs", map[bool]string{true: "guild", false: "bank"}[result.IsGuild], len(result.Tabs))
-	}
-
-	return result
+	return nil
 }
