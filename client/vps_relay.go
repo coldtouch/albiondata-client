@@ -175,3 +175,36 @@ func SendChestCapture(capture *ContainerCapture) {
 
 	log.Infof("[VPSRelay] Sent chest capture (%d items) to VPS", capture.ItemCount)
 }
+
+func SendLootEvent(lootEvent *LootEvent) {
+	if vpsRelay == nil {
+		return
+	}
+
+	r := vpsRelay
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.connected || r.conn == nil {
+		return
+	}
+
+	msg := map[string]interface{}{
+		"type": "loot-event",
+		"data": lootEvent,
+	}
+
+	msgJSON, err := json.Marshal(msg)
+	if err != nil {
+		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
+		return
+	}
+
+	if err := r.conn.WriteMessage(websocket.TextMessage, msgJSON); err != nil {
+		log.Errorf("[VPSRelay] Send failed: %v", err)
+		r.connected = false
+		return
+	}
+
+	log.Debugf("[VPSRelay] Sent loot event: %s looted %s x%d", lootEvent.LootedBy.Name, lootEvent.ItemID, lootEvent.Quantity)
+}

@@ -104,6 +104,12 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 	// 	event = &eventSkillData{}
 	//case evRedZonePlayerNotification:
 	//	event = &eventRedZonePlayerNotification{}
+	case evNewCharacter:
+		event = &eventNewCharacter{}
+	case evCharacterStats:
+		event = &eventCharacterStats{}
+	case evOtherGrabbedLoot:
+		event = &eventOtherGrabbedLoot{}
 	case evRedZoneWorldMapEvent:
 		event = &eventRedZoneWorldMapEvent{}
 	case evNewSimpleItem:

@@ -1,0 +1,165 @@
+package client
+
+import (
+	"sync"
+	"time"
+
+	"github.com/ao-data/albiondata-client/log"
+)
+
+// === PLAYER TRACKING ===
+// EvNewCharacter and EvCharacterStats register players with their guild/alliance.
+// This data is needed to attribute loot events to players.
+
+type PlayerInfo struct {
+	Name     string `json:"name"`
+	Guild    string `json:"guild,omitempty"`
+	Alliance string `json:"alliance,omitempty"`
+}
+
+var playerCache sync.Map // map[string]*PlayerInfo — key is player name
+
+func getPlayer(name string) *PlayerInfo {
+	if val, ok := playerCache.Load(name); ok {
+		return val.(*PlayerInfo)
+	}
+	return &PlayerInfo{Name: name}
+}
+
+// eventNewCharacter fires when a player enters your view range.
+// Contains player name, guild, and alliance info.
+type eventNewCharacter struct {
+	ObjectID     int64  `mapstructure:"0"`
+	PlayerName   string `mapstructure:"1"`
+	GuildName    string `mapstructure:"8"`
+	AllianceName string `mapstructure:"51"`
+}
+
+func (ev eventNewCharacter) Process(state *albionState) {
+	if ev.PlayerName == "" {
+		return
+	}
+	p := &PlayerInfo{
+		Name:     ev.PlayerName,
+		Guild:    ev.GuildName,
+		Alliance: ev.AllianceName,
+	}
+	playerCache.Store(ev.PlayerName, p)
+	log.Debugf("[NewCharacter] %s [%s] <%s>", ev.PlayerName, ev.GuildName, ev.AllianceName)
+}
+
+// eventCharacterStats fires with player info (name, guild, alliance).
+// Secondary source — sometimes fires when EvNewCharacter doesn't.
+type eventCharacterStats struct {
+	ObjectID     int64  `mapstructure:"0"`
+	PlayerName   string `mapstructure:"1"`
+	GuildName    string `mapstructure:"2"`
+	AllianceName string `mapstructure:"4"`
+}
+
+func (ev eventCharacterStats) Process(state *albionState) {
+	if ev.PlayerName == "" {
+		return
+	}
+	p := &PlayerInfo{
+		Name:     ev.PlayerName,
+		Guild:    ev.GuildName,
+		Alliance: ev.AllianceName,
+	}
+	playerCache.Store(ev.PlayerName, p)
+	log.Debugf("[CharacterStats] %s [%s] <%s>", ev.PlayerName, ev.GuildName, ev.AllianceName)
+}
+
+// === LOOT CAPTURE ===
+// EvOtherGrabbedLoot fires when any player in range picks up loot.
+
+type LootEvent struct {
+	Timestamp       int64      `json:"timestamp"`       // Unix millis
+	LootedBy        PlayerInfo `json:"lootedBy"`        // Who picked it up
+	LootedFrom      PlayerInfo `json:"lootedFrom"`      // Who/what dropped it
+	ItemID          string     `json:"itemId"`           // String item ID (from itemmap)
+	NumericID       int        `json:"numericId"`        // Raw numeric ID
+	ItemName        string     `json:"itemName"`         // Friendly name if available
+	Quantity        int        `json:"quantity"`
+	IsSilver        bool       `json:"isSilver"`
+	Weight          float64    `json:"weight"`           // Per-unit weight
+}
+
+// eventOtherGrabbedLoot fires when a player picks up loot from a corpse/bag.
+type eventOtherGrabbedLoot struct {
+	ObjectID   int64  `mapstructure:"0"`
+	LootedFrom string `mapstructure:"1"` // Player/mob name who dropped the loot
+	LootedBy   string `mapstructure:"2"` // Player name who picked up the loot
+	IsSilver   bool   `mapstructure:"3"` // True if silver pickup (no item data)
+	ItemNumID  int16  `mapstructure:"4"` // Numeric item type ID
+	Quantity   int16  `mapstructure:"5"` // Quantity looted
+}
+
+func (ev eventOtherGrabbedLoot) Process(state *albionState) {
+	if ev.LootedBy == "" {
+		return
+	}
+
+	// Skip silver pickups — no item data
+	if ev.IsSilver {
+		log.Debugf("[Loot] %s picked up silver from %s", ev.LootedBy, ev.LootedFrom)
+		return
+	}
+
+	itemName := resolveItemName(int(ev.ItemNumID))
+	qty := int(ev.Quantity)
+	if qty <= 0 {
+		qty = 1
+	}
+
+	lootedBy := getPlayer(ev.LootedBy)
+	lootedFrom := getPlayer(ev.LootedFrom)
+
+	lootEvent := &LootEvent{
+		Timestamp:  time.Now().UnixMilli(),
+		LootedBy:   *lootedBy,
+		LootedFrom: *lootedFrom,
+		ItemID:     itemName,
+		NumericID:  int(ev.ItemNumID),
+		Quantity:   qty,
+		IsSilver:   ev.IsSilver,
+		Weight:     resolveItemWeight(int(ev.ItemNumID)),
+	}
+
+	log.Infof("[Loot] %s [%s] picked up %s x%d from %s [%s]",
+		lootedBy.Name, lootedBy.Guild,
+		itemName, qty,
+		lootedFrom.Name, lootedFrom.Guild)
+
+	// Store in local buffer + send to VPS
+	lootBuffer.add(lootEvent)
+	SendLootEvent(lootEvent)
+}
+
+// === LOOT BUFFER ===
+// Keeps recent loot events in memory for local access
+
+type lootEventBuffer struct {
+	mu     sync.Mutex
+	events []*LootEvent
+	max    int
+}
+
+var lootBuffer = &lootEventBuffer{max: 1000}
+
+func (b *lootEventBuffer) add(ev *LootEvent) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.events = append(b.events, ev)
+	if len(b.events) > b.max {
+		b.events = b.events[len(b.events)-b.max:]
+	}
+}
+
+func (b *lootEventBuffer) getAll() []*LootEvent {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	result := make([]*LootEvent, len(b.events))
+	copy(result, b.events)
+	return result
+}
