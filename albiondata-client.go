@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strings"
 	"syscall"
@@ -29,6 +30,16 @@ func main() {
 
 	startUpdater()
 
+	// Save loot log on shutdown (Ctrl+C, SIGTERM, window close)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		log.Info("Shutting down — saving loot log...")
+		client.SaveLootLog()
+		os.Exit(0)
+	}()
+
 	// On macOS, the systray requires the Cocoa event loop to run on the main thread.
 	// So we run the client in a goroutine and systray on the main thread.
 	// On other platforms, we do the opposite for backward compatibility.
@@ -39,6 +50,9 @@ func main() {
 		go systray.Run()
 		runClient()
 	}
+
+	// Also save if Run() returns normally
+	client.SaveLootLog()
 }
 
 func runClient() {
