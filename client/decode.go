@@ -114,10 +114,18 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventInventoryPutItem{}
 	case evNewJournalItem:
 		event = &eventNewJournalItem{}
+	case evNewFurnitureItem:
+		event = &eventNewFurnitureItem{}
+	case evNewKillTrophyItem:
+		event = &eventNewKillTrophyItem{}
+	case evNewLaborerItem:
+		event = &eventNewLaborerItem{}
 	case evGuildVaultInfo:
 		event = &eventGuildVaultInfo{}
 	case evBankVaultInfo:
 		event = &eventBankVaultInfo{}
+	case evAttachItemContainer:
+		event = &eventAttachItemContainer{}
 	default:
 		return nil, nil
 	}

@@ -11,7 +11,7 @@ import (
 
 // eventNewSimpleItem fires for each stackable item in a container
 type eventNewSimpleItem struct {
-	SlotPosition int16 `mapstructure:"0"` // Slot index in the container
+	SlotPosition int16 `mapstructure:"0"` // Global slot index assigned by the game
 	ItemTypeID   int16 `mapstructure:"1"` // Numeric item type ID (map via itemmap.json)
 	Quantity     int8  `mapstructure:"2"` // Stack count
 	ObjectID     int64 `mapstructure:"4"` // Unique object instance ID
@@ -25,7 +25,8 @@ func (event eventNewSimpleItem) Process(state *albionState) {
 	}
 	log.Debugf("[SimpleItem] slot=%d item=%s (id=%d) qty=%d", event.SlotPosition, itemName, event.ItemTypeID, qty)
 
-	containerCollector.addItem(CapturedItem{
+	// Store in global cache — evAttachItemContainer will look these up by slot
+	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
 		ItemID:      itemName,
 		NumericID:   int(event.ItemTypeID),
 		Quality:     1, // Simple items are always Normal quality
@@ -33,12 +34,13 @@ func (event eventNewSimpleItem) Process(state *albionState) {
 		Enchantment: 0,
 		IsEquipment: false,
 		Slot:        int(event.SlotPosition),
+		Weight:      resolveItemWeight(int(event.ItemTypeID)),
 	})
 }
 
 // eventNewEquipmentItem fires for each gear item in a container
 type eventNewEquipmentItem struct {
-	SlotPosition   int16    `mapstructure:"0"`  // Slot index
+	SlotPosition   int16    `mapstructure:"0"`  // Global slot index
 	ItemTypeID     int16    `mapstructure:"1"`  // Numeric item type ID
 	Quality        int8     `mapstructure:"2"`  // 1=Normal, 2=Good, 3=Outstanding, 4=Excellent, 5=Masterpiece
 	ObjectID       int64    `mapstructure:"4"`  // Unique object instance ID
@@ -58,7 +60,8 @@ func (event eventNewEquipmentItem) Process(state *albionState) {
 	}
 	log.Debugf("[EquipItem] slot=%d item=%s (id=%d) quality=%d crafter=%s", event.SlotPosition, itemName, event.ItemTypeID, qual, event.CrafterName)
 
-	containerCollector.addItem(CapturedItem{
+	// Store in global cache — evAttachItemContainer will look these up by slot
+	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
 		ItemID:      itemName,
 		NumericID:   int(event.ItemTypeID),
 		Quality:     qual,
@@ -67,6 +70,7 @@ func (event eventNewEquipmentItem) Process(state *albionState) {
 		IsEquipment: true,
 		Slot:        int(event.SlotPosition),
 		CrafterName: event.CrafterName,
+		Weight:      resolveItemWeight(int(event.ItemTypeID)),
 	})
 }
 
@@ -94,28 +98,118 @@ func (event eventNewJournalItem) Process(state *albionState) {
 	}
 	log.Debugf("[JournalItem] slot=%d item=%s qty=%d", event.SlotPosition, itemName, qty)
 
-	containerCollector.addItem(CapturedItem{
+	// Store in global cache
+	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
 		ItemID:      itemName,
 		NumericID:   int(event.ItemTypeID),
 		Quality:     1,
 		Quantity:    qty,
 		IsEquipment: false,
 		Slot:        int(event.SlotPosition),
+		Weight:      resolveItemWeight(int(event.ItemTypeID)),
 	})
 }
 
-// === CONTAINER ITEM COLLECTOR ===
-// Collects items between ContainerOpen and a timeout/close, then bundles them
+// eventNewFurnitureItem fires for furniture items (islands, chests, decorations, mounts stored as furniture)
+type eventNewFurnitureItem struct {
+	SlotPosition int16 `mapstructure:"0"`
+	ItemTypeID   int16 `mapstructure:"1"`
+	Quality      int8  `mapstructure:"2"`
+	ObjectID     int64 `mapstructure:"4"`
+}
+
+func (event eventNewFurnitureItem) Process(state *albionState) {
+	itemName := resolveItemName(int(event.ItemTypeID))
+	qual := int(event.Quality)
+	if qual <= 0 {
+		qual = 1
+	}
+	log.Debugf("[FurnitureItem] slot=%d item=%s (id=%d) quality=%d", event.SlotPosition, itemName, event.ItemTypeID, qual)
+
+	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
+		ItemID:      itemName,
+		NumericID:   int(event.ItemTypeID),
+		Quality:     qual,
+		Quantity:    1,
+		IsEquipment: false,
+		Slot:        int(event.SlotPosition),
+		Weight:      resolveItemWeight(int(event.ItemTypeID)),
+	})
+}
+
+// eventNewKillTrophyItem fires for kill trophy items in containers
+type eventNewKillTrophyItem struct {
+	SlotPosition int16 `mapstructure:"0"`
+	ItemTypeID   int16 `mapstructure:"1"`
+	Quality      int8  `mapstructure:"2"`
+	ObjectID     int64 `mapstructure:"4"`
+}
+
+func (event eventNewKillTrophyItem) Process(state *albionState) {
+	itemName := resolveItemName(int(event.ItemTypeID))
+	qual := int(event.Quality)
+	if qual <= 0 {
+		qual = 1
+	}
+	log.Debugf("[KillTrophyItem] slot=%d item=%s (id=%d) quality=%d", event.SlotPosition, itemName, event.ItemTypeID, qual)
+
+	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
+		ItemID:      itemName,
+		NumericID:   int(event.ItemTypeID),
+		Quality:     qual,
+		Quantity:    1,
+		IsEquipment: false,
+		Slot:        int(event.SlotPosition),
+		Weight:      resolveItemWeight(int(event.ItemTypeID)),
+	})
+}
+
+// eventNewLaborerItem fires for laborer contract items
+type eventNewLaborerItem struct {
+	SlotPosition int16 `mapstructure:"0"`
+	ItemTypeID   int16 `mapstructure:"1"`
+	Quantity     int8  `mapstructure:"2"`
+	ObjectID     int64 `mapstructure:"4"`
+}
+
+func (event eventNewLaborerItem) Process(state *albionState) {
+	itemName := resolveItemName(int(event.ItemTypeID))
+	qty := int(event.Quantity)
+	if qty <= 0 {
+		qty = 1
+	}
+	log.Debugf("[LaborerItem] slot=%d item=%s (id=%d) qty=%d", event.SlotPosition, itemName, event.ItemTypeID, qty)
+
+	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
+		ItemID:      itemName,
+		NumericID:   int(event.ItemTypeID),
+		Quality:     1,
+		Quantity:    qty,
+		IsEquipment: false,
+		Slot:        int(event.SlotPosition),
+		Weight:      resolveItemWeight(int(event.ItemTypeID)),
+	})
+}
+
+// === GLOBAL ITEM CACHE ===
+// The game sends item events (EquipItem, SimpleItem, etc.) for ALL nearby containers.
+// Each item has a unique global slot number. evAttachItemContainer param 3 contains
+// the slot numbers that belong to a specific container tab. We look them up here.
+
+var globalItemCache sync.Map // map[int]CapturedItem — key is global slot number
+
+// === CONTAINER CAPTURE STRUCTS ===
 
 type CapturedItem struct {
-	ItemID      string `json:"itemId"`
-	NumericID   int    `json:"numericId"`
-	Quality     int    `json:"quality"`
-	Quantity    int    `json:"quantity"`
-	Enchantment int    `json:"enchantment,omitempty"`
-	IsEquipment bool   `json:"isEquipment"`
-	Slot        int    `json:"slot"`
-	CrafterName string `json:"crafterName,omitempty"`
+	ItemID      string  `json:"itemId"`
+	NumericID   int     `json:"numericId"`
+	Quality     int     `json:"quality"`
+	Quantity    int     `json:"quantity"`
+	Enchantment int     `json:"enchantment,omitempty"`
+	IsEquipment bool    `json:"isEquipment"`
+	Slot        int     `json:"slot"`
+	CrafterName string  `json:"crafterName,omitempty"`
+	Weight      float64 `json:"weight"` // per-unit weight in kg from game data
 }
 
 type ContainerCapture struct {
@@ -129,163 +223,85 @@ type ContainerCapture struct {
 	Location    string         `json:"location"`
 	CapturedAt  int64          `json:"capturedAt"`
 	ItemCount   int            `json:"itemCount"`
+	TotalWeight float64        `json:"totalWeight"` // sum of all item weights in kg
 }
 
-type itemCollector struct {
-	mu          sync.Mutex
-	items       []CapturedItem
-	containerID string
-	tabName     string
-	tabIndex    int // current tab index (0-based); set by ContainerOpen/ContainerManageSubContainer
-	collecting  bool
-	timer       *time.Timer
-	lastCapture *ContainerCapture
-}
+// BuildCaptureFromSlots looks up items from the global cache using the slot IDs
+// from evAttachItemContainer param 3, then builds and sends the capture.
+func BuildCaptureFromSlots(slotIDs []int, containerGUID string, tabName string, tabIndex int) {
+	var items []CapturedItem
+	var missing int
 
-var containerCollector = &itemCollector{}
-
-func (c *itemCollector) setContainerID(id string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.containerID = id
-}
-
-func (c *itemCollector) setTabName(name string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.tabName = name
-}
-
-func (c *itemCollector) resetTabIndex() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.tabIndex = 0
-}
-
-func (c *itemCollector) incrementTabIndex() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.tabIndex++
-}
-
-func (c *itemCollector) setTabIndex(idx int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.tabIndex = idx
-}
-
-func (c *itemCollector) startCollecting() {
-	c.mu.Lock()
-
-	// If we already have items from a previous tab, finalize them first
-	// This handles rapid tab switching where the user clicks tabs faster than the timeout
-	if c.collecting && len(c.items) > 0 {
-		if c.timer != nil {
-			c.timer.Stop()
+	for _, slotID := range slotIDs {
+		if slotID == 0 {
+			continue // empty slot
 		}
-		c.finalizeUnlocked() // sends previous tab's capture while we hold the lock
+		if val, ok := globalItemCache.Load(slotID); ok {
+			item := val.(CapturedItem)
+			if IsSpecialItem(item.NumericID) {
+				log.Debugf("[ContainerCapture] Skipping special item at slot %d: %s (id=%d)", slotID, item.ItemID, item.NumericID)
+				continue
+			}
+			items = append(items, item)
+		} else {
+			missing++
+			log.Debugf("[ContainerCapture] Slot %d referenced but not in cache (item type not captured — mount/furniture/trophy?)", slotID)
+		}
 	}
 
-	// Reset for new container
-	c.items = nil
-	c.tabName = ""
-	c.collecting = true
-
-	// Auto-finalize after 3 seconds of no new items
-	// (server sends all items in rapid burst, then stops)
-	if c.timer != nil {
-		c.timer.Stop()
-	}
-	c.timer = time.AfterFunc(3*time.Second, func() {
-		c.finalize()
-	})
-
-	c.mu.Unlock()
-}
-
-func (c *itemCollector) addItem(item CapturedItem) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !c.collecting {
-		// Ignore item events that happen outside of an explicit ContainerOpen
-		// (zone loading, player equipment, bank proximity, etc.)
+	if len(items) == 0 && missing == 0 {
+		log.Info("[ContainerCapture] Empty tab — no items to capture")
 		return
 	}
 
-	// Skip internal/currency items (silver, gold, fame credits, etc.)
-	// These have negative numeric IDs and aren't tradable on the market
-	if IsSpecialItem(item.NumericID) {
-		log.Debugf("[ItemCollector] Skipping special item: %s (id=%d)", item.ItemID, item.NumericID)
-		return
-	}
-
-	c.items = append(c.items, item)
-
-	// Reset the timer — more items might be coming
-	if c.timer != nil {
-		c.timer.Stop()
-	}
-	c.timer = time.AfterFunc(2*time.Second, func() {
-		c.finalize()
-	})
-}
-
-func (c *itemCollector) finalize() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.finalizeUnlocked()
-}
-
-// finalizeUnlocked does the actual finalization work. Caller must hold c.mu.
-func (c *itemCollector) finalizeUnlocked() {
-	if !c.collecting || len(c.items) == 0 {
-		c.collecting = false
-		return
-	}
-
-	// Resolve tab name: use direct GUID-matched name if set, otherwise look up by tabIndex
-	resolvedTabName := c.tabName
+	// Resolve vault tab info
+	resolvedTabName := tabName
 	var vaultTabs []VaultTab
 	var isGuild bool
 	if vi := GetCurrentVaultTabs(); vi != nil {
 		vaultTabs = vi.Tabs
 		isGuild = vi.IsGuild
-		if resolvedTabName == "" && c.tabIndex >= 0 && c.tabIndex < len(vi.Tabs) {
-			name := vi.Tabs[c.tabIndex].Name
+		if resolvedTabName == "" && tabIndex >= 0 && tabIndex < len(vi.Tabs) {
+			name := vi.Tabs[tabIndex].Name
 			if name != "" {
 				resolvedTabName = name
-				log.Infof("[ContainerCapture] Resolved tab name from index %d: %s", c.tabIndex, resolvedTabName)
+				log.Infof("[ContainerCapture] Resolved tab name from index %d: %s", tabIndex, resolvedTabName)
 			}
 		}
 	}
 
+	// Calculate total weight
+	var totalWeight float64
+	for _, item := range items {
+		totalWeight += item.Weight * float64(item.Quantity)
+	}
+
 	capture := &ContainerCapture{
-		Items:       c.items,
-		ContainerID: c.containerID,
+		Items:       items,
+		ContainerID: containerGUID,
 		TabName:     resolvedTabName,
-		TabIndex:    c.tabIndex,
+		TabIndex:    tabIndex,
 		VaultTabs:   vaultTabs,
 		IsGuild:     isGuild,
 		CapturedAt:  time.Now().UnixMilli(),
-		ItemCount:   len(c.items),
+		ItemCount:   len(items),
+		TotalWeight: totalWeight,
 	}
 
-	c.lastCapture = capture
-	c.collecting = false
+	log.Infof("[ContainerCapture] Captured %d items (%d equipment, %d stackable, %d missing from cache) — total weight: %.1f kg",
+		len(items),
+		countEquipment(items),
+		len(items)-countEquipment(items),
+		missing,
+		totalWeight)
 
-	log.Infof("[ContainerCapture] Captured %d items (%d equipment, %d stackable)",
-		len(c.items),
-		countEquipment(c.items),
-		len(c.items)-countEquipment(c.items))
-
-	// Log first 10 items as summary (avoid flooding logs for large tabs)
-	for i, item := range c.items {
+	// Log first 10 items as summary
+	for i, item := range items {
 		if i >= 10 {
-			log.Infof("[ContainerCapture]   ... and %d more items", len(c.items)-10)
+			log.Infof("[ContainerCapture]   ... and %d more items", len(items)-10)
 			break
 		}
-		log.Infof("[ContainerCapture]   %s q%d x%d", item.ItemID, item.Quality, item.Quantity)
+		log.Infof("[ContainerCapture]   %s q%d x%d (%.1fkg)", item.ItemID, item.Quality, item.Quantity, item.Weight*float64(item.Quantity))
 	}
 
 	// Send to VPS via WebSocket relay
