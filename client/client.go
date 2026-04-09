@@ -27,8 +27,9 @@ func (client *Client) Run() error {
 	ConfigGlobal.setupDebugEvents()
 	ConfigGlobal.setupDebugOperations()
 
-	// Load item name mapping for chest capture feature
+	// Load item name and weight mappings for chest capture feature
 	LoadItemMap()
+	LoadWeightMap()
 
 	// Ensure capture token exists (check config, or run device auth flow)
 	captureToken := EnsureCaptureToken()

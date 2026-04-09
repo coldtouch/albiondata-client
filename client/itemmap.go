@@ -10,6 +10,7 @@ import (
 )
 
 var itemNameMap map[string]string
+var itemWeightMap map[string]float64
 
 // specialItemNames maps negative/internal numeric IDs to human-readable names.
 // These IDs are assigned by the Photon protocol at runtime and are not in ao-bin-dumps.
@@ -33,6 +34,7 @@ func IsSpecialItem(numericID int) bool {
 
 func init() {
 	itemNameMap = make(map[string]string)
+	itemWeightMap = make(map[string]float64)
 }
 
 // LoadItemMap loads the numeric ID to string name mapping from itemmap.json
@@ -60,6 +62,41 @@ func LoadItemMap() {
 	}
 
 	log.Warn("[ItemMap] itemmap.json not found — item names will show as numeric IDs. Download from ao-bin-dumps.")
+}
+
+// LoadWeightMap loads the numeric ID to weight mapping from weightmap.json
+func LoadWeightMap() {
+	paths := []string{
+		"weightmap.json",
+		filepath.Join(filepath.Dir(os.Args[0]), "weightmap.json"),
+	}
+
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		err = json.Unmarshal(data, &itemWeightMap)
+		if err != nil {
+			log.Errorf("[WeightMap] Failed to parse %s: %v", path, err)
+			continue
+		}
+
+		log.Infof("[WeightMap] Loaded %d weight mappings from %s", len(itemWeightMap), path)
+		return
+	}
+
+	log.Warn("[WeightMap] weightmap.json not found — item weights will be 0.")
+}
+
+// resolveItemWeight returns the weight in kg for a numeric item type ID. Returns 0 if unknown.
+func resolveItemWeight(numericID int) float64 {
+	key := fmt.Sprintf("%d", numericID)
+	if w, ok := itemWeightMap[key]; ok {
+		return w
+	}
+	return 0
 }
 
 // resolveItemName converts a numeric item type ID to a string name like "T8_2H_NATURESTAFF@3"
