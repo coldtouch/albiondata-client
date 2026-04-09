@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/ao-data/albiondata-client/client"
 	"github.com/ao-data/albiondata-client/icon"
 	"github.com/ao-data/albiondata-client/log"
 	"github.com/getlantern/systray"
@@ -30,7 +31,7 @@ func Run() {
 }
 
 func onExit() {
-	// Cleanup if needed
+	client.SaveLootLog()
 }
 
 func onReady() {
