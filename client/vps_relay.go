@@ -208,3 +208,36 @@ func SendLootEvent(lootEvent *LootEvent) {
 
 	log.Debugf("[VPSRelay] Sent loot event: %s looted %s x%d", lootEvent.LootedBy.Name, lootEvent.ItemID, lootEvent.Quantity)
 }
+
+func SendDeathEvent(deathEvent *DeathEvent) {
+	if vpsRelay == nil {
+		return
+	}
+
+	r := vpsRelay
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.connected || r.conn == nil {
+		return
+	}
+
+	msg := map[string]interface{}{
+		"type": "death-event",
+		"data": deathEvent,
+	}
+
+	msgJSON, err := json.Marshal(msg)
+	if err != nil {
+		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
+		return
+	}
+
+	if err := r.conn.WriteMessage(websocket.TextMessage, msgJSON); err != nil {
+		log.Errorf("[VPSRelay] Send failed: %v", err)
+		r.connected = false
+		return
+	}
+
+	log.Debugf("[VPSRelay] Sent death event: %s killed by %s", deathEvent.VictimName, deathEvent.KillerName)
+}
