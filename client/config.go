@@ -77,7 +77,7 @@ type config struct {
 var ConfigGlobal = &config{
 	LogLevel:          "INFO",
 	CaptureEnabled:    true,
-	UpdateGithubOwner: "ao-data",
+	UpdateGithubOwner: "coldtouch",
 	UpdateGithubRepo:  "albiondata-client"}
 
 func (config *config) SetupFlags() {
@@ -130,14 +130,13 @@ func (config *config) setupWebsocketFlags() {
 		config.CaptureEnabled = viper.GetBool("CaptureEnabled")
 	}
 
-	// // Keeping for local development, but commenting out so it's not live.
-	// // Read update configuration (use defaults if not specified)
-	// if viper.IsSet("UpdateGithubOwner") {
-	// 	config.UpdateGithubOwner = viper.GetString("UpdateGithubOwner")
-	// }
-	// if viper.IsSet("UpdateGithubRepo") {
-	// 	config.UpdateGithubRepo = viper.GetString("UpdateGithubRepo")
-	// }
+	// Allow config.yaml to override the update owner/repo (useful for dev/testing).
+	if viper.IsSet("UpdateGithubOwner") {
+		config.UpdateGithubOwner = viper.GetString("UpdateGithubOwner")
+	}
+	if viper.IsSet("UpdateGithubRepo") {
+		config.UpdateGithubRepo = viper.GetString("UpdateGithubRepo")
+	}
 }
 
 func (config *config) setupDebugFlags() {
