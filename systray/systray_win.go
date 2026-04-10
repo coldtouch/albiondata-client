@@ -52,7 +52,7 @@ func Run() {
 }
 
 func onExit() {
-	client.SaveLootLog()
+	client.CloseLootFile()
 }
 
 func onReady() {
