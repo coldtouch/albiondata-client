@@ -35,8 +35,8 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		log.Info("Shutting down — saving loot log...")
-		client.SaveLootLog()
+		log.Info("Shutting down — closing loot log...")
+		client.CloseLootFile()
 		os.Exit(0)
 	}()
 
@@ -51,8 +51,8 @@ func main() {
 		runClient()
 	}
 
-	// Also save if Run() returns normally
-	client.SaveLootLog()
+	// Also close if Run() returns normally
+	client.CloseLootFile()
 }
 
 func runClient() {
