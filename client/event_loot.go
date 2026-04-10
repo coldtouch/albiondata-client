@@ -77,15 +77,14 @@ func (ev eventCharacterStats) Process(state *albionState) {
 // EvOtherGrabbedLoot fires when any player in range picks up loot.
 
 type LootEvent struct {
-	Timestamp       int64      `json:"timestamp"`       // Unix millis
-	LootedBy        PlayerInfo `json:"lootedBy"`        // Who picked it up
-	LootedFrom      PlayerInfo `json:"lootedFrom"`      // Who/what dropped it
-	ItemID          string     `json:"itemId"`           // String item ID (from itemmap)
-	NumericID       int        `json:"numericId"`        // Raw numeric ID
-	ItemName        string     `json:"itemName"`         // Friendly name if available
-	Quantity        int        `json:"quantity"`
-	IsSilver        bool       `json:"isSilver"`
-	Weight          float64    `json:"weight"`           // Per-unit weight
+	Timestamp  int64      `json:"timestamp"`  // Unix millis
+	LootedBy   PlayerInfo `json:"lootedBy"`   // Who picked it up
+	LootedFrom PlayerInfo `json:"lootedFrom"` // Who/what dropped it
+	ItemID     string     `json:"itemId"`     // String item ID (from itemmap)
+	NumericID  int        `json:"numericId"`  // Raw numeric ID
+	Quantity   int        `json:"quantity"`
+	IsSilver   bool       `json:"isSilver"`
+	Weight     float64    `json:"weight"` // Per-unit weight
 }
 
 // eventOtherGrabbedLoot fires when a player picks up loot from a corpse/bag.
@@ -134,93 +133,108 @@ func (ev eventOtherGrabbedLoot) Process(state *albionState) {
 		itemName, qty,
 		lootedFrom.Name, lootedFrom.Guild)
 
-	// Store in local buffer + send to VPS
-	lootBuffer.add(lootEvent)
+	// Write to local log file and send to VPS
+	lootWriter.append(lootEvent)
 	SendLootEvent(lootEvent)
 }
 
-// === LOOT BUFFER ===
-// Keeps recent loot events in memory for local access
-
-type lootEventBuffer struct {
-	mu     sync.Mutex
-	events []*LootEvent
-	max    int
-}
-
-var lootBuffer = &lootEventBuffer{max: 1000}
-
-func (b *lootEventBuffer) add(ev *LootEvent) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.events = append(b.events, ev)
-	if len(b.events) > b.max {
-		b.events = b.events[len(b.events)-b.max:]
-	}
-}
-
-func (b *lootEventBuffer) getAll() []*LootEvent {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	result := make([]*LootEvent, len(b.events))
-	copy(result, b.events)
-	return result
-}
-
-// SaveLootLog writes all buffered loot events to a .txt file in ao-loot-logger format.
-// Called on client shutdown so the user can upload the file to the website.
+// === LOOT FILE WRITER ===
+// Writes each loot event to a semicolon-delimited .txt file as it arrives,
+// compatible with ao-loot-logger format so files can be uploaded to the website.
+//
 // Format: timestamp_utc;looted_by__alliance;looted_by__guild;looted_by__name;item_id;item_name;quantity;looted_from__alliance;looted_from__guild;looted_from__name
-func SaveLootLog() {
-	events := lootBuffer.getAll()
-	if len(events) == 0 {
-		log.Info("[LootLog] No loot events to save")
-		return
+
+type lootFileWriter struct {
+	mu       sync.Mutex
+	file     *os.File
+	filePath string
+	ready    bool
+}
+
+var lootWriter = &lootFileWriter{}
+
+// ensureInit opens (or creates) the loot log file. Must be called with mu held.
+func (w *lootFileWriter) ensureInit() error {
+	if w.ready {
+		return nil
 	}
 
-	// Build filename with timestamp
-	t := time.Now()
-	filename := fmt.Sprintf("loot-events-%s.txt", t.Format("2006-01-02-15-04-05"))
-
-	// Save next to the executable
+	// Resolve logs directory next to the executable
 	exePath, err := os.Executable()
 	if err != nil {
 		exePath = "."
 	}
-	filePath := filepath.Join(filepath.Dir(exePath), filename)
-
-	// Also try current working directory as fallback
-	if _, err := os.Stat(filepath.Dir(filePath)); err != nil {
-		filePath = filename
+	logsDir := filepath.Join(filepath.Dir(exePath), "logs")
+	if mkErr := os.MkdirAll(logsDir, 0755); mkErr != nil {
+		// Fall back to a local logs/ directory
+		logsDir = "logs"
+		_ = os.MkdirAll(logsDir, 0755)
 	}
 
-	f, err := os.Create(filePath)
+	t := time.Now().UTC()
+	filename := fmt.Sprintf("loot-events-%s.txt", t.Format("2006-01-02_15-04-05"))
+	w.filePath = filepath.Join(logsDir, filename)
+
+	f, err := os.Create(w.filePath)
 	if err != nil {
-		log.Errorf("[LootLog] Failed to create file %s: %v", filePath, err)
+		return fmt.Errorf("failed to create loot log %s: %w", w.filePath, err)
+	}
+
+	// Write the header line
+	_, err = fmt.Fprintln(f, "timestamp_utc;looted_by__alliance;looted_by__guild;looted_by__name;item_id;item_name;quantity;looted_from__alliance;looted_from__guild;looted_from__name")
+	if err != nil {
+		f.Close()
+		return fmt.Errorf("failed to write loot log header: %w", err)
+	}
+	_ = f.Sync()
+
+	w.file = f
+	w.ready = true
+	log.Infof("[LootLog] Writing loot events to %s", w.filePath)
+	return nil
+}
+
+// append writes a single loot event to the file and syncs immediately.
+func (w *lootFileWriter) append(ev *LootEvent) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if err := w.ensureInit(); err != nil {
+		log.Errorf("[LootLog] %v", err)
 		return
 	}
-	defer f.Close()
 
-	// Write header
-	fmt.Fprintln(f, "timestamp_utc;looted_by__alliance;looted_by__guild;looted_by__name;item_id;item_name;quantity;looted_from__alliance;looted_from__guild;looted_from__name")
+	ts := time.UnixMilli(ev.Timestamp).UTC().Format(time.RFC3339)
+	// item_name: we only have the string ID (e.g. T4_BAG), not a localised display name
+	fmt.Fprintf(w.file, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
+		ts,
+		ev.LootedBy.Alliance,
+		ev.LootedBy.Guild,
+		ev.LootedBy.Name,
+		ev.ItemID,
+		ev.ItemID,
+		ev.Quantity,
+		ev.LootedFrom.Alliance,
+		ev.LootedFrom.Guild,
+		ev.LootedFrom.Name,
+	)
+	_ = w.file.Sync()
+}
 
-	// Write events
-	for _, ev := range events {
-		ts := time.UnixMilli(ev.Timestamp).UTC().Format(time.RFC3339)
-		// item_name: use friendly name from ITEM_NAMES if we had it, otherwise use itemId
-		itemName := ev.ItemID // Already the string ID like T4_MAIN_SPEAR
-		fmt.Fprintf(f, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
-			ts,
-			ev.LootedBy.Alliance,
-			ev.LootedBy.Guild,
-			ev.LootedBy.Name,
-			ev.ItemID,
-			itemName,
-			ev.Quantity,
-			ev.LootedFrom.Alliance,
-			ev.LootedFrom.Guild,
-			ev.LootedFrom.Name,
-		)
+// CloseLootFile flushes and closes the loot log file. Call on shutdown.
+func CloseLootFile() {
+	lootWriter.mu.Lock()
+	defer lootWriter.mu.Unlock()
+
+	if lootWriter.file == nil {
+		return
 	}
+	_ = lootWriter.file.Sync()
+	lootWriter.file.Close()
+	lootWriter.file = nil
+	lootWriter.ready = false
 
-	log.Infof("[LootLog] Saved %d loot events to %s", len(events), filePath)
+	if lootWriter.filePath != "" {
+		log.Infof("[LootLog] Loot log closed: %s", lootWriter.filePath)
+	}
 }
