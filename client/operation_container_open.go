@@ -57,7 +57,6 @@ type eventAttachItemContainer struct {
 	TabGUID       []int8     `mapstructure:"2"`
 	SlotMap       []int      `mapstructure:"3"`
 	Capacity      int        `mapstructure:"4"`
-	RawParams     map[string]interface{} `mapstructure:",remain"`
 }
 
 func (ev eventAttachItemContainer) Process(state *albionState) {
