@@ -46,7 +46,7 @@ type MarketNotification interface {
 }
 
 type MarketSellNotification struct {
-	MailID          int     `json:"Id"`
+	MailID          int32   `json:"Id"`
 	ItemID          string  `json:"ItemTypeId"`
 	LocationID      string  `json:"LocationId"`
 	Amount          int     `json:"Amount"`
@@ -56,7 +56,7 @@ type MarketSellNotification struct {
 }
 
 type MarketExpiryNotification struct {
-	MailID     int    `json:"Id"`
+	MailID     int32  `json:"Id"`
 	ItemID     string `json:"ItemTypeId"`
 	LocationID string `json:"LocationId"`
 	Amount     int    `json:"Amount"`

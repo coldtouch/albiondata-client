@@ -241,3 +241,49 @@ func SendDeathEvent(deathEvent *DeathEvent) {
 
 	log.Debugf("[VPSRelay] Sent death event: %s killed by %s", deathEvent.VictimName, deathEvent.KillerName)
 }
+
+// SaleNotification represents a marketplace sale detected from in-game mail
+type SaleNotification struct {
+	Timestamp int64  `json:"timestamp"` // Unix millis
+	ItemID    string `json:"itemId"`    // e.g. T4_BAG
+	Amount    int    `json:"amount"`
+	Price     int    `json:"unitPrice"` // silver per unit
+	Total     int    `json:"total"`     // total silver (before tax)
+	Location  string `json:"location"`
+	MailID    int32  `json:"mailId"`
+	OrderType string `json:"orderType"` // FINISHED or EXPIRED
+	Sold      int    `json:"sold"`      // for expired orders: how many sold
+}
+
+func SendSaleNotification(sale *SaleNotification) {
+	if vpsRelay == nil {
+		return
+	}
+
+	r := vpsRelay
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.connected || r.conn == nil {
+		return
+	}
+
+	msg := map[string]interface{}{
+		"type": "sale-notification",
+		"data": sale,
+	}
+
+	msgJSON, err := json.Marshal(msg)
+	if err != nil {
+		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
+		return
+	}
+
+	if err := r.conn.WriteMessage(websocket.TextMessage, msgJSON); err != nil {
+		log.Errorf("[VPSRelay] Send failed: %v", err)
+		r.connected = false
+		return
+	}
+
+	log.Infof("[VPSRelay] Sent sale notification: %s x%d @ %d silver", sale.ItemID, sale.Amount, sale.Price)
+}
