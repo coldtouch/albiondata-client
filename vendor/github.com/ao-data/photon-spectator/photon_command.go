@@ -54,6 +54,11 @@ type ReliableMessage struct {
 
 	ParameterCount int16
 	Data           []byte
+
+	// Encryption info
+	IsEncrypted bool   // True if the message payload is encrypted
+	RawType     uint8  // Original type byte before masking (includes encryption flag)
+	RawData     []byte // Raw bytes after type byte (encrypted payload if IsEncrypted)
 }
 
 type ReliableFragment struct {
@@ -78,8 +83,29 @@ func (c PhotonCommand) ReliableMessage() (msg ReliableMessage, err error) {
 	binary.Read(buf, binary.BigEndian, &msg.Signature)
 	binary.Read(buf, binary.BigEndian, &msg.Type)
 
+	msg.RawType = msg.Type
+
 	if msg.Type > 128 {
-		return msg, fmt.Errorf("Encryption not supported")
+		// Encrypted message — extract what we can without decrypting
+		msg.IsEncrypted = true
+		msg.Type = msg.Type & 0x7F // Unmask to get the actual message type
+		msg.RawData = buf.Bytes()  // Preserve the encrypted payload for inspection
+
+		// Try to read the next byte as event/op code — it IS encrypted,
+		// but on some Photon implementations only params are encrypted
+		if buf.Len() >= 1 {
+			switch msg.Type {
+			case OperationRequest:
+				binary.Read(buf, binary.BigEndian, &msg.OperationCode)
+			case EventDataType:
+				binary.Read(buf, binary.BigEndian, &msg.EventCode)
+			case OperationResponse:
+				binary.Read(buf, binary.BigEndian, &msg.OperationCode)
+			}
+		}
+
+		// Return with nil error — let caller decide how to handle encrypted messages
+		return msg, nil
 	}
 
 	if msg.Type == otherOperationResponse {

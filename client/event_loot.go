@@ -93,8 +93,8 @@ type eventOtherGrabbedLoot struct {
 	LootedFrom string `mapstructure:"1"` // Player/mob name who dropped the loot
 	LootedBy   string `mapstructure:"2"` // Player name who picked up the loot
 	IsSilver   bool   `mapstructure:"3"` // True if silver pickup (no item data)
-	ItemNumID  int16  `mapstructure:"4"` // Numeric item type ID
-	Quantity   int16  `mapstructure:"5"` // Quantity looted
+	ItemNumID  int32  `mapstructure:"4"` // Numeric item type ID (int32 to match protocol)
+	Quantity   int32  `mapstructure:"5"` // Quantity looted
 }
 
 func (ev eventOtherGrabbedLoot) Process(state *albionState) {

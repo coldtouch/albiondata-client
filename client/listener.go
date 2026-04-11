@@ -73,7 +73,6 @@ func (l *listener) startOfflinePcap(path string) {
 }
 
 func (l *listener) startOfflineCommandGob(path string) {
-	// Set up packets with an empty channel
 	l.sourcePackets = make(chan gopacket.Packet, 1)
 
 	var decoder *gob.Decoder
@@ -130,7 +129,6 @@ func (l *listener) run() {
 			if packet != nil {
 				l.processPacket(packet)
 			} else {
-				// MUST only happen with the offline processor.
 				l.handle.Close()
 				return
 			}
@@ -198,29 +196,26 @@ func (l *listener) processPacket(packet gopacket.Packet) {
 }
 
 func (l *listener) onReliableCommand(command *photon.PhotonCommand) {
-	// Record all photon commands even if the params did not parse correctly
 	if ConfigGlobal.RecordPath != "" {
 		l.router.recordPhotonCommand <- *command
 	}
 
 	msg, err := command.ReliableMessage()
 	if err != nil {
+		return
+	}
 
-		if fmt.Sprint(err) == "Encryption not supported" && l.router.albionstate.WaitingForMarketData == true {
+	// Skip encrypted messages silently
+	if msg.IsEncrypted {
+		if l.router.albionstate.WaitingForMarketData {
 			l.router.albionstate.WaitingForMarketData = false
 			log.Info("Market data is encrypted. Please see https://www.albion-online-data.com/client/encryption.html for more information.")
 		}
-
-		if !ConfigGlobal.DebugIgnoreDecodingErrors {
-			log.Debugf("Could not decode reliable message: %v - %v", err, base64.StdEncoding.EncodeToString(command.Data))
-		}
 		return
 	}
+
 	params := photon.DecodeReliableMessage(msg)
 	if params == nil {
-		if !ConfigGlobal.DebugIgnoreDecodingErrors {
-			log.Debugf("ERROR: Could not decode params: [%d] (%d) (%d) %v", msg.Type, msg.ParameterCount, len(msg.Data), base64.StdEncoding.EncodeToString(msg.Data))
-		}
 		return
 	}
 

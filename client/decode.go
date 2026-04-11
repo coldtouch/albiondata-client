@@ -26,7 +26,6 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		operation = &operationAuctionGetItemAverageStats{}
 	case opGetClusterMapInfo:
 		operation = &operationGetClusterMapInfo{}
-	// case opGoldMarketGetAverageInfo:
 	case opGoldMarketGetAverageInfo:
 		operation = &operationGoldMarketGetAverageInfo{}
 	case opRealEstateGetAuctionData:
@@ -65,12 +64,13 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 	case opAuctionGetItemAverageStats:
 		operation = &operationAuctionGetItemAverageStatsResponse{}
 	case opGetMailInfos:
-		operation = &operationGetMailInfosResponse{}
+		// Decode raw — protocol changed, mapstructure can't handle the new param layout
+		processMailInfosRaw(params)
+		return nil, nil
 	case opReadMail:
 		operation = &operationReadMail{}
 	case opGetClusterMapInfo:
 		operation = &operationGetClusterMapInfoResponse{}
-	// case opGoldMarketGetAverageInfo:
 	case opGoldMarketGetAverageInfo:
 		operation = &operationGoldMarketGetAverageInfoResponse{}
 	case opRealEstateGetAuctionData:
@@ -98,12 +98,6 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 	eventType := params[252].(int16)
 
 	switch EventType(eventType) {
-	// case evRespawn: //TODO: confirm this eventCode (old 77)
-	// 	event = &eventPlayerOnlineStatus{}
-	// case evCharacterStats: //TODO: confirm this eventCode (old 114)
-	// 	event = &eventSkillData{}
-	//case evRedZonePlayerNotification:
-	//	event = &eventRedZonePlayerNotification{}
 	case evNewCharacter:
 		event = &eventNewCharacter{}
 	case evCharacterStats:
@@ -166,9 +160,6 @@ func decodeParams(params map[uint8]interface{}, operation operation) error {
 		return err
 	}
 
-	// Decided that the maps were easier to work with in most places with uint8 keys
-	// Therefore we have to convert to a string map in order for the decode to work here
-	// Should be negligible performance loss
 	stringMap := make(map[string]interface{})
 	for k, v := range params {
 		stringMap[strconv.Itoa(int(k))] = v
@@ -180,29 +171,17 @@ func decodeParams(params map[uint8]interface{}, operation operation) error {
 }
 
 func decodeCharacterID(array []int8) lib.CharacterID {
-	/* So this is a UUID, which is stored in a 'mixed-endian' format.
-	The first three components are stored in little-endian, the rest in big-endian.
-	See https://en.wikipedia.org/wiki/Universally_unique_identifier#Encoding.
-	By default, our int array is read as big-endian, so we need to swap the first
-	three components of the UUID
-	*/
 	b := make([]byte, len(array))
 
-	// First, convert to byte
 	for k, v := range array {
 		b[k] = byte(v)
 	}
 
-	// swap first component
+	// swap first component (little-endian to big-endian)
 	b[0], b[1], b[2], b[3] = b[3], b[2], b[1], b[0]
-
-	// swap second component
 	b[4], b[5] = b[5], b[4]
-
-	// swap third component
 	b[6], b[7] = b[7], b[6]
 
-	// format it UUID-style
 	var buf [36]byte
 	hex.Encode(buf[:], b[:4])
 	buf[8] = '-'

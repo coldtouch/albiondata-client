@@ -11,9 +11,9 @@ import (
 
 // eventNewSimpleItem fires for each stackable item in a container
 type eventNewSimpleItem struct {
-	SlotPosition int16 `mapstructure:"0"` // Global slot index assigned by the game
-	ItemTypeID   int16 `mapstructure:"1"` // Numeric item type ID (map via itemmap.json)
-	Quantity     int8  `mapstructure:"2"` // Stack count
+	SlotPosition int32 `mapstructure:"0"` // Global slot index assigned by the game (int32 — values can exceed 500k+)
+	ItemTypeID   int32 `mapstructure:"1"` // Numeric item type ID (map via itemmap.json)
+	Quantity     int16 `mapstructure:"2"` // Stack count
 	ObjectID     int64 `mapstructure:"4"` // Unique object instance ID
 }
 
@@ -40,8 +40,8 @@ func (event eventNewSimpleItem) Process(state *albionState) {
 
 // eventNewEquipmentItem fires for each gear item in a container
 type eventNewEquipmentItem struct {
-	SlotPosition   int16    `mapstructure:"0"`  // Global slot index
-	ItemTypeID     int16    `mapstructure:"1"`  // Numeric item type ID
+	SlotPosition   int32    `mapstructure:"0"`  // Global slot index (int32 — values can exceed 500k+)
+	ItemTypeID     int32    `mapstructure:"1"`  // Numeric item type ID
 	Quality        int8     `mapstructure:"2"`  // 1=Normal, 2=Good, 3=Outstanding, 4=Excellent, 5=Masterpiece
 	ObjectID       int64    `mapstructure:"4"`  // Unique object instance ID
 	CrafterName    string   `mapstructure:"5"`  // Who crafted it
@@ -85,9 +85,9 @@ func (event eventInventoryPutItem) Process(state *albionState) {
 
 // eventNewJournalItem fires for journal items in a container
 type eventNewJournalItem struct {
-	SlotPosition int16 `mapstructure:"0"`
-	ItemTypeID   int16 `mapstructure:"1"`
-	Quantity     int8  `mapstructure:"2"`
+	SlotPosition int32 `mapstructure:"0"`
+	ItemTypeID   int32 `mapstructure:"1"`
+	Quantity     int16 `mapstructure:"2"`
 }
 
 func (event eventNewJournalItem) Process(state *albionState) {
@@ -112,8 +112,8 @@ func (event eventNewJournalItem) Process(state *albionState) {
 
 // eventNewFurnitureItem fires for furniture items (islands, chests, decorations, mounts stored as furniture)
 type eventNewFurnitureItem struct {
-	SlotPosition int16 `mapstructure:"0"`
-	ItemTypeID   int16 `mapstructure:"1"`
+	SlotPosition int32 `mapstructure:"0"`
+	ItemTypeID   int32 `mapstructure:"1"`
 	Quality      int8  `mapstructure:"2"`
 	ObjectID     int64 `mapstructure:"4"`
 }
@@ -139,8 +139,8 @@ func (event eventNewFurnitureItem) Process(state *albionState) {
 
 // eventNewKillTrophyItem fires for kill trophy items in containers
 type eventNewKillTrophyItem struct {
-	SlotPosition int16 `mapstructure:"0"`
-	ItemTypeID   int16 `mapstructure:"1"`
+	SlotPosition int32 `mapstructure:"0"`
+	ItemTypeID   int32 `mapstructure:"1"`
 	Quality      int8  `mapstructure:"2"`
 	ObjectID     int64 `mapstructure:"4"`
 }
@@ -166,9 +166,9 @@ func (event eventNewKillTrophyItem) Process(state *albionState) {
 
 // eventNewLaborerItem fires for laborer contract items
 type eventNewLaborerItem struct {
-	SlotPosition int16 `mapstructure:"0"`
-	ItemTypeID   int16 `mapstructure:"1"`
-	Quantity     int8  `mapstructure:"2"`
+	SlotPosition int32 `mapstructure:"0"`
+	ItemTypeID   int32 `mapstructure:"1"`
+	Quantity     int16 `mapstructure:"2"`
 	ObjectID     int64 `mapstructure:"4"`
 }
 
