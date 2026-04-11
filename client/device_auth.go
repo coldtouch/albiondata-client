@@ -15,6 +15,9 @@ import (
 
 const vpsBaseURL = "https://albionaitool.xyz"
 
+// HTTP client with timeout for device auth requests
+var authHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 type deviceCodeResponse struct {
 	UserCode        string `json:"user_code"`
 	DeviceCode      string `json:"device_code"`
@@ -33,7 +36,7 @@ type deviceTokenResponse struct {
 // Returns the capture token on success
 func RunDeviceAuth() (string, error) {
 	// Step 1: Request a device code
-	resp, err := http.Post(vpsBaseURL+"/api/device/code", "application/json", nil)
+	resp, err := authHTTPClient.Post(vpsBaseURL+"/api/device/code", "application/json", nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to request device code: %v", err)
 	}
@@ -77,7 +80,7 @@ func RunDeviceAuth() (string, error) {
 		tokenReq := map[string]string{"device_code": codeResp.DeviceCode}
 		tokenBody, _ := json.Marshal(tokenReq)
 
-		resp, err := http.Post(vpsBaseURL+"/api/device/token", "application/json", bytes.NewReader(tokenBody))
+		resp, err := authHTTPClient.Post(vpsBaseURL+"/api/device/token", "application/json", bytes.NewReader(tokenBody))
 		if err != nil {
 			continue // Network error, retry
 		}
