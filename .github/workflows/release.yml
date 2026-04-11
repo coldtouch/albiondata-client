@@ -48,6 +48,13 @@ jobs:
           asset_path: weightmap.json
           overwrite: true
 
+      - name: Upload config.yaml template
+        uses: shogo82148/actions-upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: config.yaml.example
+          overwrite: true
+
   build-linux:
     name: Build Linux Client
     runs-on: ubuntu-latest
