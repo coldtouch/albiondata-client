@@ -103,6 +103,11 @@ func (config *config) SetupFlags() {
 		log.Info("Upload is disabled.")
 	}
 
+	// Warn if offline mode is active but a capture token is set (VPS relay would be initialized)
+	if config.Offline && config.CaptureToken != "" {
+		log.Warn("[Config] Offline mode is active but a capture token is set — VPS relay will not receive data")
+	}
+
 	config.setupLogs()
 }
 
@@ -318,11 +323,15 @@ func rotateLogFiles() {
 	for i := maxLogFiles - 1; i >= 1; i-- {
 		oldName := fmt.Sprintf("%s.%d", logFileName, i)
 		newName := fmt.Sprintf("%s.%d", logFileName, i+1)
-		_ = os.Rename(oldName, newName)
+		if err := os.Rename(oldName, newName); err != nil && !os.IsNotExist(err) {
+			log.Warnf("[Config] Log rotation failed: %v", err)
+		}
 	}
 
 	// Rename current log file to .1
-	_ = os.Rename(logFileName, fmt.Sprintf("%s.1", logFileName))
+	if err := os.Rename(logFileName, fmt.Sprintf("%s.1", logFileName)); err != nil {
+		log.Warnf("[Config] Log rotation failed: %v", err)
+	}
 }
 
 // GetLogFilePath returns the full path to the current log file

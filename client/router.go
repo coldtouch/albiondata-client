@@ -29,7 +29,8 @@ func (r *Router) run() {
 	var encoder *gob.Encoder
 	var file *os.File
 	if ConfigGlobal.RecordPath != "" {
-		file, err := os.Create(ConfigGlobal.RecordPath)
+		var err error
+		file, err = os.Create(ConfigGlobal.RecordPath)
 		if err != nil {
 			log.Error("Could not open commands output file ", err)
 		} else {
