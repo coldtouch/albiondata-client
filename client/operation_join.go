@@ -24,6 +24,9 @@ func (op operationJoinResponse) Process(state *albionState) {
 	// of SetServerID() incase the player switched servers
 	state.AODataServerID = 0
 
+	// Clear item cache on zone change to prevent unbounded memory growth
+	ClearItemCache()
+
 	log.Infof("Updating player location to %v.", op.Location)
 	state.LocationId = op.Location
 

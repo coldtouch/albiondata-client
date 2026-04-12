@@ -18,7 +18,10 @@ type VPSRelay struct {
 	token       string
 	connected   bool
 	reconnectCh chan struct{}
+	pendingMsgs [][]byte // bounded queue for messages during disconnect
 }
+
+const maxPendingMsgs = 50
 
 var vpsRelay *VPSRelay
 
@@ -42,8 +45,66 @@ func InitVPSRelay(captureToken string) {
 func (r *VPSRelay) connectLoop() {
 	for {
 		r.connect()
-		// Wait before reconnecting
+		r.flushPending()
 		time.Sleep(10 * time.Second)
+	}
+}
+
+// sendOrQueue sends a message immediately if connected, otherwise queues it for retry.
+func (r *VPSRelay) sendOrQueue(msgJSON []byte) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.connected || r.conn == nil {
+		// Queue for later
+		if len(r.pendingMsgs) < maxPendingMsgs {
+			r.pendingMsgs = append(r.pendingMsgs, msgJSON)
+			log.Debugf("[VPSRelay] Queued message (%d pending)", len(r.pendingMsgs))
+		}
+		return false
+	}
+
+	if err := r.conn.WriteMessage(websocket.TextMessage, msgJSON); err != nil {
+		log.Errorf("[VPSRelay] Send failed: %v", err)
+		r.connected = false
+		// Queue this message for retry
+		if len(r.pendingMsgs) < maxPendingMsgs {
+			r.pendingMsgs = append(r.pendingMsgs, msgJSON)
+		}
+		return false
+	}
+	return true
+}
+
+// flushPending sends all queued messages after a successful reconnect.
+func (r *VPSRelay) flushPending() {
+	r.mu.Lock()
+	if !r.connected || r.conn == nil || len(r.pendingMsgs) == 0 {
+		r.mu.Unlock()
+		return
+	}
+	pending := r.pendingMsgs
+	r.pendingMsgs = nil
+	r.mu.Unlock()
+
+	sent := 0
+	for _, msg := range pending {
+		r.mu.Lock()
+		if !r.connected || r.conn == nil {
+			// Re-queue remaining
+			r.pendingMsgs = append(r.pendingMsgs, pending[sent:]...)
+			r.mu.Unlock()
+			break
+		}
+		err := r.conn.WriteMessage(websocket.TextMessage, msg)
+		r.mu.Unlock()
+		if err != nil {
+			break
+		}
+		sent++
+	}
+	if sent > 0 {
+		log.Infof("[VPSRelay] Flushed %d queued messages", sent)
 	}
 }
 
@@ -141,105 +202,48 @@ func (r *VPSRelay) connect() {
 	}
 }
 
-// SendChestCapture sends a captured container to the VPS
+// SendChestCapture sends a captured container to the VPS (queues if disconnected)
 func SendChestCapture(capture *ContainerCapture) {
 	if vpsRelay == nil {
 		return
 	}
-
-	r := vpsRelay
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if !r.connected || r.conn == nil {
-		log.Debug("[VPSRelay] Not connected — capture not sent")
-		return
-	}
-
-	msg := map[string]interface{}{
-		"type": "chest-capture",
-		"data": capture,
-	}
-
+	msg := map[string]interface{}{"type": "chest-capture", "data": capture}
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
 		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
 	}
-
-	if err := r.conn.WriteMessage(websocket.TextMessage, msgJSON); err != nil {
-		log.Errorf("[VPSRelay] Send failed: %v", err)
-		r.connected = false
-		return
+	if vpsRelay.sendOrQueue(msgJSON) {
+		log.Infof("[VPSRelay] Sent chest capture (%d items) to VPS", capture.ItemCount)
 	}
-
-	log.Infof("[VPSRelay] Sent chest capture (%d items) to VPS", capture.ItemCount)
 }
 
 func SendLootEvent(lootEvent *LootEvent) {
 	if vpsRelay == nil {
 		return
 	}
-
-	r := vpsRelay
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if !r.connected || r.conn == nil {
-		return
-	}
-
-	msg := map[string]interface{}{
-		"type": "loot-event",
-		"data": lootEvent,
-	}
-
+	msg := map[string]interface{}{"type": "loot-event", "data": lootEvent}
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
-		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
 	}
-
-	if err := r.conn.WriteMessage(websocket.TextMessage, msgJSON); err != nil {
-		log.Errorf("[VPSRelay] Send failed: %v", err)
-		r.connected = false
-		return
+	if vpsRelay.sendOrQueue(msgJSON) {
+		log.Debugf("[VPSRelay] Sent loot event: %s looted %s x%d", lootEvent.LootedBy.Name, lootEvent.ItemID, lootEvent.Quantity)
 	}
-
-	log.Debugf("[VPSRelay] Sent loot event: %s looted %s x%d", lootEvent.LootedBy.Name, lootEvent.ItemID, lootEvent.Quantity)
 }
 
 func SendDeathEvent(deathEvent *DeathEvent) {
 	if vpsRelay == nil {
 		return
 	}
-
-	r := vpsRelay
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if !r.connected || r.conn == nil {
-		return
-	}
-
-	msg := map[string]interface{}{
-		"type": "death-event",
-		"data": deathEvent,
-	}
-
+	msg := map[string]interface{}{"type": "death-event", "data": deathEvent}
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
-		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
 	}
-
-	if err := r.conn.WriteMessage(websocket.TextMessage, msgJSON); err != nil {
-		log.Errorf("[VPSRelay] Send failed: %v", err)
-		r.connected = false
-		return
+	if vpsRelay.sendOrQueue(msgJSON) {
+		log.Debugf("[VPSRelay] Sent death event: %s killed by %s", deathEvent.VictimName, deathEvent.KillerName)
 	}
-
-	log.Debugf("[VPSRelay] Sent death event: %s killed by %s", deathEvent.VictimName, deathEvent.KillerName)
 }
 
 // SaleNotification represents a marketplace sale detected from in-game mail
@@ -259,31 +263,12 @@ func SendSaleNotification(sale *SaleNotification) {
 	if vpsRelay == nil {
 		return
 	}
-
-	r := vpsRelay
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if !r.connected || r.conn == nil {
-		return
-	}
-
-	msg := map[string]interface{}{
-		"type": "sale-notification",
-		"data": sale,
-	}
-
+	msg := map[string]interface{}{"type": "sale-notification", "data": sale}
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
-		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
 	}
-
-	if err := r.conn.WriteMessage(websocket.TextMessage, msgJSON); err != nil {
-		log.Errorf("[VPSRelay] Send failed: %v", err)
-		r.connected = false
-		return
+	if vpsRelay.sendOrQueue(msgJSON) {
+		log.Infof("[VPSRelay] Sent sale notification: %s x%d @ %d silver", sale.ItemID, sale.Amount, sale.Price)
 	}
-
-	log.Infof("[VPSRelay] Sent sale notification: %s x%d @ %d silver", sale.ItemID, sale.Amount, sale.Price)
 }

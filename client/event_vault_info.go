@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ao-data/albiondata-client/log"
@@ -25,6 +26,7 @@ type VaultInfo struct {
 }
 
 // Separate vault info for guild and bank — both can fire simultaneously
+var vaultMu sync.RWMutex
 var currentGuildVaultInfo *VaultInfo
 var currentBankVaultInfo *VaultInfo
 
@@ -37,7 +39,9 @@ func (event eventGuildVaultInfo) Process(state *albionState) {
 	vi := parseVaultInfo(event.RawParams, true)
 	if vi != nil {
 		vi.ReceivedAt = time.Now()
+		vaultMu.Lock()
 		currentGuildVaultInfo = vi
+		vaultMu.Unlock()
 		log.Infof("[GuildVault] %d tabs detected: %v", len(vi.Tabs), tabNames(vi.Tabs))
 	}
 }
@@ -51,7 +55,9 @@ func (event eventBankVaultInfo) Process(state *albionState) {
 	vi := parseVaultInfo(event.RawParams, false)
 	if vi != nil {
 		vi.ReceivedAt = time.Now()
+		vaultMu.Lock()
 		currentBankVaultInfo = vi
+		vaultMu.Unlock()
 		log.Infof("[BankVault] %d tabs detected: %v", len(vi.Tabs), tabNames(vi.Tabs))
 	}
 }
@@ -228,6 +234,8 @@ func matchContainerToVaultTab(containerGUID string) (string, int) {
 // Guild island chests fire BOTH GuildVaultInfo (guild tabs) and BankVaultInfo (personal bank tab).
 // We merge them so all tabs (guild + personal) are in one list for GUID matching.
 func GetCurrentVaultTabs() *VaultInfo {
+	vaultMu.RLock()
+	defer vaultMu.RUnlock()
 	guildFresh := currentGuildVaultInfo != nil
 	bankFresh := currentBankVaultInfo != nil
 

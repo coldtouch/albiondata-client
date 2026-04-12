@@ -179,6 +179,9 @@ func (l *listener) processPacket(packet gopacket.Packet) {
 		case photon.SendReliableType:
 			l.onReliableCommand(&command)
 		case photon.SendUnreliableType:
+			if len(command.Data) < 4 {
+				continue // malformed unreliable packet
+			}
 			var s = make([]byte, len(command.Data)-4)
 			copy(s, command.Data[4:])
 			command.Data = s
@@ -186,7 +189,10 @@ func (l *listener) processPacket(packet gopacket.Packet) {
 			command.Type = 6
 			l.onReliableCommand(&command)
 		case photon.SendReliableFragmentType:
-			msg, _ := command.ReliableFragment()
+			msg, err := command.ReliableFragment()
+			if err != nil {
+				continue // malformed fragment
+			}
 			result := l.fragments.Offer(msg)
 			if result != nil {
 				l.onReliableCommand(result)

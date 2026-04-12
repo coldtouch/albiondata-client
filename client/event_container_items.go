@@ -2,6 +2,7 @@ package client
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ao-data/albiondata-client/log"
@@ -197,6 +198,18 @@ func (event eventNewLaborerItem) Process(state *albionState) {
 // the slot numbers that belong to a specific container tab. We look them up here.
 
 var globalItemCache sync.Map // map[int]CapturedItem — key is global slot number
+var itemCacheCount int64      // approximate count for eviction decisions
+
+// ClearItemCache removes all entries from the global item cache.
+// Called on zone transitions to prevent unbounded memory growth.
+func ClearItemCache() {
+	globalItemCache.Range(func(key, _ interface{}) bool {
+		globalItemCache.Delete(key)
+		return true
+	})
+	atomic.StoreInt64(&itemCacheCount, 0)
+	log.Debug("[ItemCache] Cleared")
+}
 
 // === CONTAINER CAPTURE STRUCTS ===
 
