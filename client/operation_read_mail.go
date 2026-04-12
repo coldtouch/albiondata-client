@@ -57,6 +57,11 @@ func decodeSellNotification(op operationReadMail, body []string) lib.MarketNotif
 	notification := &lib.MarketSellNotification{}
 	notification.MailID = op.ID
 
+	if len(body) < 4 {
+		log.Errorf("[Mail] Sell notification has too few body parts (%d): %v", len(body), body)
+		return nil
+	}
+
 	amount, err := strconv.Atoi(body[0])
 	if err != nil {
 		log.Error("[Mail] Could not parse amount in market sell notification ", err)
