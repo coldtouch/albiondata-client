@@ -18,7 +18,8 @@ type VPSRelay struct {
 	token       string
 	connected   bool
 	reconnectCh chan struct{}
-	pendingMsgs [][]byte // bounded queue for messages during disconnect
+	stopCh      chan struct{} // signals connectLoop to stop
+	pendingMsgs [][]byte     // bounded queue for messages during disconnect
 }
 
 const maxPendingMsgs = 50
@@ -36,6 +37,7 @@ func InitVPSRelay(captureToken string) {
 		url:         "wss://albionaitool.xyz",
 		token:       captureToken,
 		reconnectCh: make(chan struct{}, 1),
+		stopCh:      make(chan struct{}),
 	}
 
 	go vpsRelay.connectLoop()
@@ -46,8 +48,25 @@ func (r *VPSRelay) connectLoop() {
 	for {
 		r.connect()
 		r.flushPending()
-		time.Sleep(10 * time.Second)
+		select {
+		case <-r.stopCh:
+			return
+		case <-time.After(10 * time.Second):
+		}
 	}
+}
+
+// StopVPSRelay gracefully shuts down the VPS relay connection.
+func StopVPSRelay() {
+	if vpsRelay == nil {
+		return
+	}
+	close(vpsRelay.stopCh)
+	vpsRelay.mu.Lock()
+	if vpsRelay.conn != nil {
+		vpsRelay.conn.Close()
+	}
+	vpsRelay.mu.Unlock()
 }
 
 // sendOrQueue sends a message immediately if connected, otherwise queues it for retry.
