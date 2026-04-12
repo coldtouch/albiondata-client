@@ -65,18 +65,16 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 	case opContainerManageSubContainer:
 		operation = &operationContainerManageSubContainer{}
 
-	// === TRADE DIAGNOSTICS — log params to map the protocol ===
+	// === TRADE TRACKING (private VPS only — does NOT affect AODP uploads) ===
+	case opAuctionBuyOffer:
+		operation = &operationAuctionBuyOfferRequest{}
+	case opAuctionCreateOffer:
+		operation = &operationAuctionCreateOfferRequest{}
+	case opAuctionCreateRequest:
+		operation = &operationAuctionCreateRequestReq{}
+	// Opcodes we monitor but haven't seen fire yet
 	case opAuctionSellRequest:
 		dumpParams("REQUEST AuctionSellRequest", code, params)
-		return nil, nil
-	case opAuctionBuyOffer:
-		dumpParams("REQUEST AuctionBuyOffer", code, params)
-		return nil, nil
-	case opAuctionCreateOffer:
-		dumpParams("REQUEST AuctionCreateOffer (list sell order)", code, params)
-		return nil, nil
-	case opAuctionCreateRequest:
-		dumpParams("REQUEST AuctionCreateRequest (place buy order)", code, params)
 		return nil, nil
 	case opQuickSellAuctionQueryAction:
 		dumpParams("REQUEST QuickSellQuery", code, params)
@@ -109,8 +107,7 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 	case opAuctionGetRequests:
 		operation = &operationAuctionGetRequestsResponse{}
 	case opAuctionBuyOffer:
-		dumpParams("RESPONSE AuctionBuyOffer (insta-buy confirmed)", code, params)
-		operation = &operationAuctionGetRequestsResponse{} // keep AODP upload working
+		operation = &operationAuctionGetRequestsResponse{} // AODP market data upload
 	case opAuctionGetItemAverageStats:
 		operation = &operationAuctionGetItemAverageStatsResponse{}
 	case opGetMailInfos:
@@ -132,21 +129,9 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 	case opContainerManageSubContainer:
 		operation = &operationContainerManageSubContainerResponse{}
 
-	// === TRADE DIAGNOSTICS — log response params ===
-	case opAuctionSellRequest:
-		dumpParams("RESPONSE AuctionSellRequest", code, params)
-		return nil, nil
-	case opAuctionCreateOffer:
-		dumpParams("RESPONSE AuctionCreateOffer (listing confirmed)", code, params)
-		return nil, nil
-	case opAuctionCreateRequest:
-		dumpParams("RESPONSE AuctionCreateRequest (buy order confirmed)", code, params)
-		return nil, nil
-	case opQuickSellAuctionQueryAction:
-		dumpParams("RESPONSE QuickSellQuery", code, params)
-		return nil, nil
-	case opQuickSellAuctionSellAction:
-		dumpParams("RESPONSE QuickSellAction", code, params)
+	// Trade response diagnostics — keep monitoring for undiscovered opcodes
+	case opAuctionSellRequest, opQuickSellAuctionQueryAction, opQuickSellAuctionSellAction:
+		dumpParams("RESPONSE trade opcode", code, params)
 		return nil, nil
 
 	default:

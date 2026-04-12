@@ -278,6 +278,33 @@ type SaleNotification struct {
 	Sold      int    `json:"sold"`      // for expired orders: how many sold
 }
 
+// TradeEvent represents a real-time marketplace transaction (insta-buy, listing, etc.)
+type TradeEvent struct {
+	Timestamp int64  `json:"timestamp"`
+	ItemID    string `json:"itemId"`
+	Amount    int    `json:"amount"`
+	Price     int    `json:"unitPrice"`  // silver per unit
+	Total     int    `json:"total"`      // total silver
+	Location  string `json:"location"`
+	TradeType string `json:"tradeType"`  // "insta-buy", "listing-created", "buy-order-placed"
+	Quality   int    `json:"quality"`
+	OrderID   int64  `json:"orderId,omitempty"`
+}
+
+func SendTradeEvent(trade *TradeEvent) {
+	if vpsRelay == nil {
+		return
+	}
+	msg := map[string]interface{}{"type": "trade-event", "data": trade}
+	msgJSON, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	if vpsRelay.sendOrQueue(msgJSON) {
+		log.Infof("[VPSRelay] Sent trade event: %s %s x%d @ %d silver", trade.TradeType, trade.ItemID, trade.Amount, trade.Price)
+	}
+}
+
 func SendSaleNotification(sale *SaleNotification) {
 	if vpsRelay == nil {
 		return

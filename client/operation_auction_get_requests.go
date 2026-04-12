@@ -31,6 +31,11 @@ func (op operationAuctionGetRequestsResponse) Process(state *albionState) {
 
 		order.LocationID = state.LocationId
 		orders = append(orders, order)
+
+		// Cache order for trade tracking
+		if order.ID > 0 {
+			marketOrderCache.Store(int64(order.ID), order)
+		}
 	}
 
 	if len(orders) < 1 {
