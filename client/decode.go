@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/hex"
+	"fmt"
 	"reflect"
 	"strconv"
 
@@ -9,6 +10,33 @@ import (
 	"github.com/ao-data/albiondata-client/log"
 	"github.com/mitchellh/mapstructure"
 )
+
+// dumpParams logs all params for an operation — used to reverse-engineer new opcodes.
+func dumpParams(label string, code int16, params map[uint8]interface{}) {
+	log.Infof("[TRADE-DIAG] %s opcode=%d — %d params:", label, code, len(params))
+	for k, v := range params {
+		if k == 253 || k == 255 {
+			continue
+		}
+		rv := reflect.ValueOf(v)
+		if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+			n := rv.Len()
+			preview := ""
+			for i := 0; i < n && i < 5; i++ {
+				if i > 0 {
+					preview += ", "
+				}
+				preview += fmt.Sprintf("%v", rv.Index(i).Interface())
+			}
+			if n > 5 {
+				preview += fmt.Sprintf("... (%d more)", n-5)
+			}
+			log.Infof("[TRADE-DIAG]   %d: %T len=%d [%s]", k, v, n, preview)
+		} else {
+			log.Infof("[TRADE-DIAG]   %d: %T = %v", k, v, v)
+		}
+	}
+}
 
 func decodeRequest(params map[uint8]interface{}) (operation operation, err error) {
 	if _, ok := params[253]; !ok {
@@ -36,6 +64,27 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		operation = &operationContainerOpen{}
 	case opContainerManageSubContainer:
 		operation = &operationContainerManageSubContainer{}
+
+	// === TRADE DIAGNOSTICS — log params to map the protocol ===
+	case opAuctionSellRequest:
+		dumpParams("REQUEST AuctionSellRequest", code, params)
+		return nil, nil
+	case opAuctionBuyOffer:
+		dumpParams("REQUEST AuctionBuyOffer", code, params)
+		return nil, nil
+	case opAuctionCreateOffer:
+		dumpParams("REQUEST AuctionCreateOffer (list sell order)", code, params)
+		return nil, nil
+	case opAuctionCreateRequest:
+		dumpParams("REQUEST AuctionCreateRequest (place buy order)", code, params)
+		return nil, nil
+	case opQuickSellAuctionQueryAction:
+		dumpParams("REQUEST QuickSellQuery", code, params)
+		return nil, nil
+	case opQuickSellAuctionSellAction:
+		dumpParams("REQUEST QuickSellAction", code, params)
+		return nil, nil
+
 	default:
 		return nil, nil
 	}
@@ -60,7 +109,8 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 	case opAuctionGetRequests:
 		operation = &operationAuctionGetRequestsResponse{}
 	case opAuctionBuyOffer:
-		operation = &operationAuctionGetRequestsResponse{}
+		dumpParams("RESPONSE AuctionBuyOffer (insta-buy confirmed)", code, params)
+		operation = &operationAuctionGetRequestsResponse{} // keep AODP upload working
 	case opAuctionGetItemAverageStats:
 		operation = &operationAuctionGetItemAverageStatsResponse{}
 	case opGetMailInfos:
@@ -81,6 +131,24 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		operation = &operationContainerOpenResponse{}
 	case opContainerManageSubContainer:
 		operation = &operationContainerManageSubContainerResponse{}
+
+	// === TRADE DIAGNOSTICS — log response params ===
+	case opAuctionSellRequest:
+		dumpParams("RESPONSE AuctionSellRequest", code, params)
+		return nil, nil
+	case opAuctionCreateOffer:
+		dumpParams("RESPONSE AuctionCreateOffer (listing confirmed)", code, params)
+		return nil, nil
+	case opAuctionCreateRequest:
+		dumpParams("RESPONSE AuctionCreateRequest (buy order confirmed)", code, params)
+		return nil, nil
+	case opQuickSellAuctionQueryAction:
+		dumpParams("RESPONSE QuickSellQuery", code, params)
+		return nil, nil
+	case opQuickSellAuctionSellAction:
+		dumpParams("RESPONSE QuickSellAction", code, params)
+		return nil, nil
+
 	default:
 		return nil, nil
 	}
