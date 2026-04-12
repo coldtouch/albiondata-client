@@ -3,11 +3,16 @@ package client
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 
 	"github.com/ao-data/albiondata-client/lib"
 	"github.com/ao-data/albiondata-client/log"
 	uuid "github.com/nu7hatch/gouuid"
 )
+
+// marketOrderCache stores recently seen market orders keyed by order ID.
+// Used to resolve item details when opAuctionBuyOffer fires (which only has order ID).
+var marketOrderCache sync.Map // map[int64]*lib.MarketOrder
 
 type operationAuctionGetOffers struct {
 	Category         string   `mapstructure:"1"`
@@ -77,6 +82,11 @@ func (op operationAuctionGetOffersResponse) Process(state *albionState) {
 		}
 
 		orders = append(orders, order)
+
+		// Cache order for insta-buy tracking (opAuctionBuyOffer uses order ID)
+		if order.ID > 0 {
+			marketOrderCache.Store(int64(order.ID), order)
+		}
 	}
 
 	if len(orders) < 1 {
