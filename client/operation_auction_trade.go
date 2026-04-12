@@ -36,7 +36,8 @@ func (op operationAuctionBuyOfferRequest) Process(state *albionState) {
 		itemName = order.ItemID
 	}
 
-	price := order.Price
+	// MarketOrder.Price is UnitPriceSilver from AODP JSON — stored as silver × 10000
+	price := order.Price / 10000
 	total := price * qty
 
 	log.Infof("[Trade] INSTA-BUY: %s x%d @ %d silver/ea = %d total — location: %s",
