@@ -67,17 +67,16 @@ func processMailInfosRaw(params map[uint8]interface{}) {
 	// Order types are now in param 11 (was param 10)
 	orderTypes := extractStringSlice(params[11])
 
-	// Try to find location IDs — check multiple params
-	// Param 6 is now bool[], check other params for string arrays that look like locations
-	locationIDs := extractStringSlice(params[4]) // Try param 4
+	// Protocol param positions shifted between game versions; try known positions in order
+	locationIDs := extractStringSlice(params[4])
 	if len(locationIDs) == 0 {
-		locationIDs = extractStringSlice(params[7]) // Try param 7
+		locationIDs = extractStringSlice(params[7])
 	}
 
-	// Try to find expiry timestamps — check for int64 arrays
-	expires := extractInt64Slice(params[8]) // Try param 8
+	// Protocol param positions shifted between game versions; try known positions in order
+	expires := extractInt64Slice(params[8])
 	if len(expires) == 0 {
-		expires = extractInt64Slice(params[9]) // Try param 9
+		expires = extractInt64Slice(params[9])
 	}
 
 	for i, id := range mailIDs {

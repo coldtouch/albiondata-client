@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ao-data/albiondata-client/log"
@@ -137,9 +138,11 @@ func EnsureCaptureToken() string {
 		return ""
 	}
 
-	// Save to config file
+	// Save to config file (resolve relative to executable path, not CWD)
 	viper.Set("CaptureToken", newToken)
-	configFile := "config.yaml"
+	exePath, _ := os.Executable()
+	configDir := filepath.Dir(exePath)
+	configFile := filepath.Join(configDir, "config.yaml")
 	if err := writeConfigFile(configFile, newToken); err != nil {
 		log.Warnf("[Auth] Could not save token to config: %v", err)
 		fmt.Printf("Warning: Could not save token to %s — you'll need to authorize again next time.\n", configFile)
