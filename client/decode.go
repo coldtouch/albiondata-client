@@ -302,16 +302,27 @@ func decodeParams(params map[uint8]interface{}, operation operation) error {
 	convertGameObjects := func(from reflect.Type, to reflect.Type, v interface{}) (interface{}, error) {
 		if from == reflect.TypeOf([]int8{}) && to == reflect.TypeOf(lib.CharacterID("")) {
 			log.Debug("Parsing character ID from mixed-endian UUID")
-
 			return decodeCharacterID(v.([]int8)), nil
+		}
+
+		// V18 sends CompressedInt (int32) where V16 sent int16 — auto-convert
+		if from.Kind() == reflect.Int32 && to.Kind() == reflect.Int16 {
+			return int16(v.(int32)), nil
+		}
+		if from.Kind() == reflect.Int32 && to.Kind() == reflect.Int8 {
+			return int8(v.(int32)), nil
+		}
+		if from.Kind() == reflect.Int64 && to.Kind() == reflect.Int32 {
+			return int32(v.(int64)), nil
 		}
 
 		return v, nil
 	}
 
 	config := mapstructure.DecoderConfig{
-		DecodeHook: convertGameObjects,
-		Result:     operation,
+		WeaklyTypedInput: true, // V18 sends different Go types than struct fields expect
+		DecodeHook:       convertGameObjects,
+		Result:           operation,
 	}
 
 	decoder, err := mapstructure.NewDecoder(&config)
