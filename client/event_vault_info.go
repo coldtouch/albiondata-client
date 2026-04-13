@@ -166,6 +166,17 @@ func extractGUIDArray(v interface{}) []string {
 			}
 			guids = append(guids, hex.EncodeToString(b))
 		}
+	case []int8:
+		// V18: flat byte array — split into 16-byte GUIDs
+		if len(arr) >= 16 {
+			for i := 0; i+16 <= len(arr); i += 16 {
+				b := make([]byte, 16)
+				for j := 0; j < 16; j++ {
+					b[j] = byte(arr[i+j])
+				}
+				guids = append(guids, hex.EncodeToString(b))
+			}
+		}
 	}
 	if len(guids) == 0 {
 		log.Infof("[VaultInfo] extractGUIDArray: no GUIDs parsed from type %T", v)

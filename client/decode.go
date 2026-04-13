@@ -294,7 +294,11 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventNewLaborerItem{}
 	case evGuildVaultInfo:
 		event = &eventGuildVaultInfo{}
+	case evGuildVaultInfo + 2: // April 2026 update may have shifted +2
+		event = &eventGuildVaultInfo{}
 	case evBankVaultInfo:
+		event = &eventBankVaultInfo{}
+	case evBankVaultInfo + 2: // April 2026 update may have shifted +2
 		event = &eventBankVaultInfo{}
 	case evAttachItemContainer:
 		event = &eventAttachItemContainer{}
