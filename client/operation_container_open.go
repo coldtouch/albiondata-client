@@ -19,12 +19,12 @@ func (op operationContainerOpen) Process(state *albionState) {
 	for _, b := range op.ContainerGUID {
 		guid += fmt.Sprintf("%02x", byte(b))
 	}
-	log.Infof("[ContainerOpen] slot=%d guid=%s len=%d", op.ContainerSlot, guid, len(op.ContainerGUID))
+	log.Debugf("[ContainerOpen] slot=%d guid=%s len=%d", op.ContainerSlot, guid, len(op.ContainerGUID))
 
 	// Try to match for logging purposes
 	matchedName, matchedIdx := matchContainerToVaultTab(guid)
 	if matchedName != "" {
-		log.Infof("[ContainerOpen] Matched to vault tab %d: %s", matchedIdx, matchedName)
+		log.Debugf("[ContainerOpen] Matched to vault tab %d: %s", matchedIdx, matchedName)
 	}
 	// Actual capture happens in eventAttachItemContainer.Process()
 }
@@ -73,7 +73,7 @@ func (ev eventAttachItemContainer) Process(state *albionState) {
 		}
 	}
 
-	log.Infof("[AttachItemContainer] slot=%d tabGuid=%s slots=%d/%d capacity=%d",
+	log.Debugf("[AttachItemContainer] slot=%d tabGuid=%s slots=%d/%d capacity=%d",
 		ev.ContainerSlot, guid, nonZero, len(ev.SlotMap), ev.Capacity)
 
 	if !ConfigGlobal.CaptureEnabled {
@@ -86,7 +86,7 @@ func (ev eventAttachItemContainer) Process(state *albionState) {
 	tabIndex := -1
 	matchedName, matchedIdx := matchContainerToVaultTab(guid)
 	if matchedName != "" {
-		log.Infof("[AttachItemContainer] Matched to vault tab %d: %s", matchedIdx, matchedName)
+		log.Debugf("[AttachItemContainer] Matched to vault tab %d: %s", matchedIdx, matchedName)
 		tabName = matchedName
 		tabIndex = matchedIdx
 	} else {

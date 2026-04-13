@@ -311,10 +311,10 @@ func BuildCaptureFromSlots(slotIDs []int, containerGUID string, tabName string, 
 	// Log first 10 items as summary
 	for i, item := range items {
 		if i >= 10 {
-			log.Infof("[ContainerCapture]   ... and %d more items", len(items)-10)
+			log.Debugf("[ContainerCapture]   ... and %d more items", len(items)-10)
 			break
 		}
-		log.Infof("[ContainerCapture]   %s q%d x%d (%.1fkg)", item.ItemID, item.Quality, item.Quantity, item.Weight*float64(item.Quantity))
+		log.Debugf("[ContainerCapture]   %s q%d x%d (%.1fkg)", item.ItemID, item.Quality, item.Quantity, item.Weight*float64(item.Quantity))
 	}
 
 	// Send to VPS via WebSocket relay

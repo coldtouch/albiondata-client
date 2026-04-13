@@ -89,7 +89,7 @@ func parseVaultInfo(params map[string]interface{}, isGuild bool) *VaultInfo {
 	// param 2 = array of vault GUIDs ([][]int8, each 16 bytes)
 	var guids []string
 	if v, ok := params["2"]; ok {
-		log.Infof("[VaultInfo] param 2 type: %T", v)
+		log.Debugf("[VaultInfo] param 2 type: %T", v)
 		guids = extractGUIDArray(v)
 	} else {
 		log.Info("[VaultInfo] param 2 not found in vault event")
@@ -179,9 +179,9 @@ func extractGUIDArray(v interface{}) []string {
 		}
 	}
 	if len(guids) == 0 {
-		log.Infof("[VaultInfo] extractGUIDArray: no GUIDs parsed from type %T", v)
+		log.Debugf("[VaultInfo] extractGUIDArray: no GUIDs parsed from type %T", v)
 	} else {
-		log.Infof("[VaultInfo] extractGUIDArray: parsed %d GUIDs", len(guids))
+		log.Debugf("[VaultInfo] extractGUIDArray: parsed %d GUIDs", len(guids))
 	}
 	return guids
 }
@@ -199,7 +199,7 @@ func extractSingleGUID(item interface{}) string {
 	case string:
 		return v
 	default:
-		log.Infof("[VaultInfo] extractSingleGUID: unknown type %T for GUID item", item)
+		log.Debugf("[VaultInfo] extractSingleGUID: unknown type %T for GUID item", item)
 		return ""
 	}
 }
@@ -267,11 +267,11 @@ func GetCurrentVaultTabs() *VaultInfo {
 			}
 			merged.Tabs = append(merged.Tabs, bankTab)
 		}
-		log.Infof("[VaultInfo] Using merged vault info with %d tabs (%d guild + %d bank)",
+		log.Debugf("[VaultInfo] Using merged vault info with %d tabs (%d guild + %d bank)",
 			len(merged.Tabs), len(currentGuildVaultInfo.Tabs), len(currentBankVaultInfo.Tabs))
 		return merged
 	} else if guildFresh {
-		log.Infof("[VaultInfo] Using guild vault info with %d tabs", len(currentGuildVaultInfo.Tabs))
+		log.Debugf("[VaultInfo] Using guild vault info with %d tabs", len(currentGuildVaultInfo.Tabs))
 		return currentGuildVaultInfo
 	} else if bankFresh {
 		// Rename default bank tab
@@ -280,7 +280,7 @@ func GetCurrentVaultTabs() *VaultInfo {
 				currentBankVaultInfo.Tabs[i].Name = "Bank"
 			}
 		}
-		log.Infof("[VaultInfo] Using bank vault info with %d tabs", len(currentBankVaultInfo.Tabs))
+		log.Debugf("[VaultInfo] Using bank vault info with %d tabs", len(currentBankVaultInfo.Tabs))
 		return currentBankVaultInfo
 	}
 
