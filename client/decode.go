@@ -35,6 +35,16 @@ func toInt16(v interface{}) (int16, bool) {
 	}
 }
 
+var decodeEventLogCount int
+
+func paramKeys(params map[uint8]interface{}) []uint8 {
+	keys := make([]uint8, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // dumpParams logs all params for an operation — used to reverse-engineer new opcodes.
 func dumpParams(label string, code int16, params map[uint8]interface{}) {
 	log.Infof("[TRADE-DIAG] %s opcode=%d — %d params:", label, code, len(params))
@@ -182,9 +192,13 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		return nil, nil
 	}
 
+	// Log first 5 events with param 252 details for V18 debugging
+	if decodeEventLogCount < 5 {
+		decodeEventLogCount++
+		log.Infof("[V18-EVT] param252: type=%T val=%v | all keys: %v", params[252], params[252], paramKeys(params))
+	}
 	eventType, ok := toInt16(params[252])
 	if !ok {
-		log.Infof("[Decode] Event param 252 unexpected type: %T = %v", params[252], params[252])
 		return nil, nil
 	}
 
