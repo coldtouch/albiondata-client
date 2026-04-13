@@ -274,9 +274,11 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventNewCharacter{}
 	case evCharacterStats:
 		event = &eventCharacterStats{}
+	case evCharacterStats + 2: // April 2026 update shifted +2
+		event = &eventCharacterStats{}
 	case evOtherGrabbedLoot + 2: // April 2026 update shifted loot event 275→277
 		event = &eventOtherGrabbedLoot{}
-	case evRedZoneWorldMapEvent:
+	case evRedZoneWorldMapEvent, evRedZoneWorldMapEvent + 2:
 		event = &eventRedZoneWorldMapEvent{}
 	case evNewSimpleItem:
 		event = &eventNewSimpleItem{}
@@ -302,9 +304,15 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventBankVaultInfo{}
 	case evAttachItemContainer:
 		event = &eventAttachItemContainer{}
+	case evAttachItemContainer + 2: // April 2026 update shifted +2
+		event = &eventAttachItemContainer{}
 	case evDied:
 		event = &eventDied{}
+	case evDied + 2: // April 2026 update shifted +2
+		event = &eventDied{}
 	case evKilledPlayer:
+		event = &eventKilledPlayer{}
+	case evKilledPlayer + 2: // April 2026 update shifted +2
 		event = &eventKilledPlayer{}
 	default:
 		log.Debugf("[Decode] Unhandled event code: %d (params: %d)", eventType, len(params))
