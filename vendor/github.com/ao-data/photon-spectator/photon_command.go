@@ -52,7 +52,7 @@ type ReliableMessage struct {
 	OperationDebugString  string
 	OperationDebugByte    uint8
 
-	ParameterCount int16
+	ParameterCount int16 // NOTE: read as uint8 in V18 format, cast to int16
 	Data           []byte
 
 	// Encryption info
@@ -119,15 +119,24 @@ func (c PhotonCommand) ReliableMessage() (msg ReliableMessage, err error) {
 		binary.Read(buf, binary.BigEndian, &msg.EventCode)
 	case OperationResponse:
 		binary.Read(buf, binary.BigEndian, &msg.OperationCode)
+		// V18: response code is int16 (2 bytes), then debug byte
+		// Try reading — if debug byte decodes to an error, just skip it
 		binary.Read(buf, binary.BigEndian, &msg.OperationResponseCode)
-		binary.Read(buf, binary.BigEndian, &msg.OperationDebugByte)
-		paramValue := decodeType(buf, msg.OperationDebugByte)
-		if paramValue != nil {
-			msg.OperationDebugString = paramValue.(string)
+		if buf.Len() > 0 {
+			binary.Read(buf, binary.BigEndian, &msg.OperationDebugByte)
+			if msg.OperationDebugByte > 0 {
+				paramValue := decodeType(buf, msg.OperationDebugByte)
+				if s, ok := paramValue.(string); ok {
+					msg.OperationDebugString = s
+				}
+			}
 		}
 	}
 
-	binary.Read(buf, binary.BigEndian, &msg.ParameterCount)
+	// V18 uses uint8 for parameter count (was int16 in V16)
+	var paramCount uint8
+	binary.Read(buf, binary.BigEndian, &paramCount)
+	msg.ParameterCount = int16(paramCount)
 	msg.Data = buf.Bytes()
 
 	return

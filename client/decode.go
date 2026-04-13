@@ -11,6 +11,30 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
+// toInt16 safely converts a Photon param to int16. The game can send codes as
+// int8, int16, int32, or even string depending on the protocol version.
+func toInt16(v interface{}) (int16, bool) {
+	switch val := v.(type) {
+	case int16:
+		return val, true
+	case int8:
+		return int16(val), true
+	case int32:
+		return int16(val), true
+	case int64:
+		return int16(val), true
+	case string:
+		// Game update may send numeric codes as strings
+		n, err := strconv.ParseInt(val, 10, 16)
+		if err != nil {
+			return 0, false
+		}
+		return int16(n), true
+	default:
+		return 0, false
+	}
+}
+
 // dumpParams logs all params for an operation — used to reverse-engineer new opcodes.
 func dumpParams(label string, code int16, params map[uint8]interface{}) {
 	log.Infof("[TRADE-DIAG] %s opcode=%d — %d params:", label, code, len(params))
@@ -43,7 +67,11 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		return nil, nil
 	}
 
-	code := params[253].(int16)
+	code, ok := toInt16(params[253])
+	if !ok {
+		log.Infof("[Decode] Request param 253 unexpected type: %T = %v", params[253], params[253])
+		return nil, nil
+	}
 
 	switch OperationType(code) {
 	case opGetGameServerByCluster:
@@ -84,6 +112,7 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		return nil, nil
 
 	default:
+		log.Infof("[Decode] Unhandled request opcode: %d (params: %d)", code, len(params))
 		return nil, nil
 	}
 
@@ -97,7 +126,11 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		return nil, nil
 	}
 
-	code := params[253].(int16)
+	code, ok := toInt16(params[253])
+	if !ok {
+		log.Infof("[Decode] Response param 253 unexpected type: %T = %v", params[253], params[253])
+		return nil, nil
+	}
 
 	switch OperationType(code) {
 	case opJoin:
@@ -135,6 +168,7 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		return nil, nil
 
 	default:
+		log.Infof("[Decode] Unhandled response opcode: %d (params: %d)", code, len(params))
 		return nil, nil
 	}
 
@@ -148,7 +182,11 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		return nil, nil
 	}
 
-	eventType := params[252].(int16)
+	eventType, ok := toInt16(params[252])
+	if !ok {
+		log.Infof("[Decode] Event param 252 unexpected type: %T = %v", params[252], params[252])
+		return nil, nil
+	}
 
 	switch EventType(eventType) {
 	case evNewCharacter:
@@ -184,6 +222,7 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 	case evKilledPlayer:
 		event = &eventKilledPlayer{}
 	default:
+		log.Infof("[Decode] Unhandled event code: %d (params: %d)", eventType, len(params))
 		return nil, nil
 	}
 

@@ -231,10 +231,11 @@ func (l *listener) onReliableCommand(command *photon.PhotonCommand) {
 	case photon.OperationRequest:
 		operation, err = decodeRequest(params)
 		if params[253] != nil {
-			number := params[253].(int16)
-			shouldDebug, exists := ConfigGlobal.DebugOperations[int(number)]
-			if (exists && shouldDebug) || (!exists && ConfigGlobal.DebugOperationsString == "") {
-				log.Debugf("OperationRequest: [%v]%v - %v", number, OperationType(number), params)
+			if number, ok := toInt16(params[253]); ok {
+				shouldDebug, exists := ConfigGlobal.DebugOperations[int(number)]
+				if (exists && shouldDebug) || (!exists && ConfigGlobal.DebugOperationsString == "") {
+					log.Debugf("OperationRequest: [%v]%v - %v", number, OperationType(number), params)
+				}
 			}
 		} else if !ConfigGlobal.DebugIgnoreDecodingErrors {
 			log.Debugf("OperationRequest: ERROR - %v", params)
@@ -242,10 +243,11 @@ func (l *listener) onReliableCommand(command *photon.PhotonCommand) {
 	case photon.OperationResponse:
 		operation, err = decodeResponse(params)
 		if params[253] != nil {
-			number := params[253].(int16)
-			shouldDebug, exists := ConfigGlobal.DebugOperations[int(number)]
-			if (exists && shouldDebug) || (!exists && ConfigGlobal.DebugOperationsString == "") {
-				log.Debugf("OperationResponse: [%v]%v - %v", number, OperationType(number), params)
+			if number, ok := toInt16(params[253]); ok {
+				shouldDebug, exists := ConfigGlobal.DebugOperations[int(number)]
+				if (exists && shouldDebug) || (!exists && ConfigGlobal.DebugOperationsString == "") {
+					log.Debugf("OperationResponse: [%v]%v - %v", number, OperationType(number), params)
+				}
 			}
 		} else if !ConfigGlobal.DebugIgnoreDecodingErrors {
 			log.Debugf("OperationResponse: ERROR - %v", params)
@@ -253,10 +255,11 @@ func (l *listener) onReliableCommand(command *photon.PhotonCommand) {
 	case photon.EventDataType:
 		operation, err = decodeEvent(params)
 		if params[252] != nil {
-			number := params[252].(int16)
-			shouldDebug, exists := ConfigGlobal.DebugEvents[int(number)]
-			if (exists && shouldDebug) || (!exists && ConfigGlobal.DebugEventsString == "") {
-				log.Debugf("EventDataType: [%v]%v - %v", number, EventType(number), params)
+			if number, ok := toInt16(params[252]); ok {
+				shouldDebug, exists := ConfigGlobal.DebugEvents[int(number)]
+				if (exists && shouldDebug) || (!exists && ConfigGlobal.DebugEventsString == "") {
+					log.Debugf("EventDataType: [%v]%v - %v", number, EventType(number), params)
+				}
 			}
 		} else if !ConfigGlobal.DebugIgnoreDecodingErrors {
 			log.Debugf("EventDataType: ERROR - %v", params)
