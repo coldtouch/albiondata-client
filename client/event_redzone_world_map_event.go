@@ -28,8 +28,9 @@ type eventRedZoneWorldMapEvent struct {
 func (event eventRedZoneWorldMapEvent) Process(state *albionState) {
 	log.Debug("Got red zone world event...")
 
-	if state.BanditEventLastTimeSubmitted.IsZero() || time.Since(state.BanditEventLastTimeSubmitted).Seconds() >= 60 {
-		state.BanditEventLastTimeSubmitted = time.Now()
+	lastSubmit := state.GetBanditEventLastTimeSubmitted()
+	if lastSubmit.IsZero() || time.Since(lastSubmit).Seconds() >= 60 {
+		state.SetBanditEventLastTimeSubmitted(time.Now())
 
 		log.Infof("Bandit Event detected (Phase: %d) ending at %d", event.Phase, event.EventTime)
 

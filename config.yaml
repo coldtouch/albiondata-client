@@ -1,3 +1,2 @@
 # Coldtouch Market Analyzer - Custom Data Client Config
-# Get your capture token from: https://coldtouch.github.io/coldtouch-market-analyzer/ → Profile → Generate Token
-CaptureToken: ""
+CaptureToken: "1fecc63b727bf9094f3565230c01369802d1ade51c4eac73"

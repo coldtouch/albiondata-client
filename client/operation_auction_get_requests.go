@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/ao-data/albiondata-client/lib"
 	"github.com/ao-data/albiondata-client/log"
@@ -29,12 +30,12 @@ func (op operationAuctionGetRequestsResponse) Process(state *albionState) {
 			log.Errorf("Problem converting market order to internal struct: %v", err)
 		}
 
-		order.LocationID = state.LocationId
+		order.LocationID = state.GetLocationId()
 		orders = append(orders, order)
 
 		// Cache order for trade tracking
 		if order.ID > 0 {
-			marketOrderCache.Store(int64(order.ID), order)
+			marketOrderCache.Store(int64(order.ID), &cachedMarketOrder{order: order, cachedAt: time.Now()})
 		}
 	}
 

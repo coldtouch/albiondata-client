@@ -22,21 +22,21 @@ func (op operationJoinResponse) Process(state *albionState) {
 
 	// Reset the AODataServerID here. This leads to a fresh execution
 	// of SetServerID() incase the player switched servers
-	state.AODataServerID = 0
+	state.SetAODataServerID(0)
 
 	// Clear item cache on zone change to prevent unbounded memory growth
 	ClearItemCache()
 
 	log.Infof("Updating player location to %v.", op.Location)
-	state.LocationId = op.Location
+	state.SetLocationId(op.Location)
 
-	if state.CharacterId != op.CharacterID {
+	if state.GetCharacterId() != op.CharacterID {
 		log.Infof("Updating player ID to %v.", op.CharacterID)
 	}
-	state.CharacterId = op.CharacterID
+	state.SetCharacterId(op.CharacterID)
 
-	if state.CharacterName != op.CharacterName {
+	if state.GetCharacterName() != op.CharacterName {
 		log.Infof("Updating player to %v.", op.CharacterName)
 	}
-	state.CharacterName = op.CharacterName
+	state.SetCharacterName(op.CharacterName)
 }

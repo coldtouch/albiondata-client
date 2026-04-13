@@ -175,5 +175,5 @@ func (u *httpUploaderPow) sendToIngest(body []byte, topic string, state *albionS
 	pow := Pow{}
 	u.getPow(&pow)
 	solution := solvePow(pow)
-	u.uploadWithPow(pow, solution, body, topic, state.AODataServerID, identifier)
+	u.uploadWithPow(pow, solution, body, topic, state.GetAODataServerID(), identifier)
 }

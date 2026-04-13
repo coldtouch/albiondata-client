@@ -161,10 +161,9 @@ func (l *listener) processPacket(packet gopacket.Packet) {
 		log.Trace("No IPv4 detected")
 		return
 	}
-	l.router.albionstate.GameServerIP = ipv4.SrcIP.String()
-	l.router.albionstate.AODataServerID, l.router.albionstate.AODataIngestBaseURL = l.router.albionstate.GetServer()
-	log.Tracef("Server ID: %s", l.router.albionstate.AODataServerID)
-	log.Tracef("Using AODataIngestBaseURL: %s", l.router.albionstate.AODataIngestBaseURL)
+	l.router.albionstate.SetServerFromIP(ipv4.SrcIP.String())
+	log.Tracef("Server ID: %d", l.router.albionstate.GetAODataServerID())
+	log.Tracef("Using AODataIngestBaseURL: %s", l.router.albionstate.GetAODataIngestBaseURL())
 
 	layer := packet.Layer(photon.PhotonLayerType)
 
@@ -213,8 +212,8 @@ func (l *listener) onReliableCommand(command *photon.PhotonCommand) {
 
 	// Skip encrypted messages silently
 	if msg.IsEncrypted {
-		if l.router.albionstate.WaitingForMarketData {
-			l.router.albionstate.WaitingForMarketData = false
+		if l.router.albionstate.GetWaitingForMarketData() {
+			l.router.albionstate.SetWaitingForMarketData(false)
 			log.Info("Market data is encrypted. Please see https://www.albion-online-data.com/client/encryption.html for more information.")
 		}
 		return

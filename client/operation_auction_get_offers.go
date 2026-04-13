@@ -4,15 +4,44 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ao-data/albiondata-client/lib"
 	"github.com/ao-data/albiondata-client/log"
 	uuid "github.com/nu7hatch/gouuid"
 )
 
+// cachedMarketOrder wraps a MarketOrder with a timestamp for TTL-based eviction.
+type cachedMarketOrder struct {
+	order    *lib.MarketOrder
+	cachedAt time.Time
+}
+
 // marketOrderCache stores recently seen market orders keyed by order ID.
 // Used to resolve item details when opAuctionBuyOffer fires (which only has order ID).
-var marketOrderCache sync.Map // map[int64]*lib.MarketOrder
+var marketOrderCache sync.Map // map[int64]*cachedMarketOrder
+
+const marketOrderCacheTTL = 10 * time.Minute
+
+func init() {
+	go marketOrderCacheCleanup()
+}
+
+// marketOrderCacheCleanup sweeps marketOrderCache every 5 minutes, deleting entries older than 10 minutes.
+func marketOrderCacheCleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		now := time.Now()
+		marketOrderCache.Range(func(key, value interface{}) bool {
+			entry := value.(*cachedMarketOrder)
+			if now.Sub(entry.cachedAt) > marketOrderCacheTTL {
+				marketOrderCache.Delete(key)
+			}
+			return true
+		})
+	}
+}
 
 type operationAuctionGetOffers struct {
 	Category         string   `mapstructure:"1"`
@@ -27,7 +56,7 @@ type operationAuctionGetOffers struct {
 
 func (op operationAuctionGetOffers) Process(state *albionState) {
 	log.Debug("Got AuctionGetOffers operation...")
-	state.WaitingForMarketData = true
+	state.SetWaitingForMarketData(true)
 }
 
 type operationAuctionGetOffersResponse struct {
@@ -36,7 +65,7 @@ type operationAuctionGetOffersResponse struct {
 
 func (op operationAuctionGetOffersResponse) Process(state *albionState) {
 	log.Debug("Got response to AuctionGetOffers operation...")
-	state.WaitingForMarketData = false
+	state.SetWaitingForMarketData(false)
 
 	if !state.IsValidLocation() {
 		return
@@ -78,14 +107,14 @@ func (op operationAuctionGetOffersResponse) Process(state *albionState) {
 		// Set the location only if its string(nil). Smugglers Dens pull locations directly from the market data (above)
 		// while the orignal cities have a null location ID and is pulled from the client state.
 		if order.LocationID == "" {
-			order.LocationID = state.LocationId
+			order.LocationID = state.GetLocationId()
 		}
 
 		orders = append(orders, order)
 
 		// Cache order for insta-buy tracking (opAuctionBuyOffer uses order ID)
 		if order.ID > 0 {
-			marketOrderCache.Store(int64(order.ID), order)
+			marketOrderCache.Store(int64(order.ID), &cachedMarketOrder{order: order, cachedAt: time.Now()})
 		}
 	}
 
