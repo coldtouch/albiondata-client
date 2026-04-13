@@ -45,6 +45,15 @@ func paramKeys(params map[uint8]interface{}) []uint8 {
 	return keys
 }
 
+// April 13 2026 game update shifted operation codes by +6.
+// We subtract 6 from the incoming code to match our enum constants.
+// Events below 25 did NOT shift; events 25+ need separate mapping.
+const opCodeShift int16 = 6
+
+func adjustOpCode(code int16) int16 {
+	return code - opCodeShift
+}
+
 // dumpParams logs all params for an operation — used to reverse-engineer new opcodes.
 func dumpParams(label string, code int16, params map[uint8]interface{}) {
 	log.Infof("[TRADE-DIAG] %s opcode=%d — %d params:", label, code, len(params))
@@ -77,11 +86,14 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		return nil, nil
 	}
 
-	code, ok := toInt16(params[253])
+	rawCode, ok := toInt16(params[253])
 	if !ok {
 		log.Infof("[Decode] Request param 253 unexpected type: %T = %v", params[253], params[253])
 		return nil, nil
 	}
+	// Try raw code first, then shifted (-6) for April 2026 update compatibility
+	code := rawCode
+	shifted := rawCode - opCodeShift
 
 	switch OperationType(code) {
 	case opGetGameServerByCluster:
@@ -122,8 +134,25 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		return nil, nil
 
 	default:
-		log.Infof("[Decode] Unhandled request opcode: %d (params: %d)", code, len(params))
-		return nil, nil
+		// Try shifted code (-6) for operations that moved in the April 2026 update
+		switch OperationType(shifted) {
+		case opAuctionGetOffers:
+			operation = &operationAuctionGetOffers{}
+		case opAuctionGetItemAverageStats:
+			operation = &operationAuctionGetItemAverageStats{}
+		case opContainerOpen:
+			operation = &operationContainerOpen{}
+		case opContainerManageSubContainer:
+			operation = &operationContainerManageSubContainer{}
+		case opAuctionBuyOffer:
+			operation = &operationAuctionBuyOfferRequest{}
+		case opAuctionCreateOffer:
+			operation = &operationAuctionCreateOfferRequest{}
+		case opAuctionCreateRequest:
+			operation = &operationAuctionCreateRequestReq{}
+		default:
+			return nil, nil
+		}
 	}
 
 	err = decodeParams(params, operation)
@@ -136,11 +165,13 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		return nil, nil
 	}
 
-	code, ok := toInt16(params[253])
+	rawCode, ok := toInt16(params[253])
 	if !ok {
 		log.Infof("[Decode] Response param 253 unexpected type: %T = %v", params[253], params[253])
 		return nil, nil
 	}
+	code := rawCode
+	shifted := rawCode - opCodeShift
 
 	switch OperationType(code) {
 	case opJoin:
@@ -178,8 +209,34 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		return nil, nil
 
 	default:
-		log.Infof("[Decode] Unhandled response opcode: %d (params: %d)", code, len(params))
-		return nil, nil
+		// Try shifted code (-6) for operations that moved in the April 2026 update
+		switch OperationType(shifted) {
+		case opJoin:
+			operation = &operationJoinResponse{}
+		case opAuctionGetOffers:
+			operation = &operationAuctionGetOffersResponse{}
+		case opAuctionGetRequests:
+			operation = &operationAuctionGetRequestsResponse{}
+		case opAuctionBuyOffer:
+			operation = &operationAuctionGetRequestsResponse{}
+		case opAuctionGetItemAverageStats:
+			operation = &operationAuctionGetItemAverageStatsResponse{}
+		case opGetMailInfos:
+			processMailInfosRaw(params)
+			return nil, nil
+		case opReadMail:
+			operation = &operationReadMail{}
+		case opContainerOpen:
+			operation = &operationContainerOpenResponse{}
+		case opContainerManageSubContainer:
+			operation = &operationContainerManageSubContainerResponse{}
+		case opGetClusterMapInfo:
+			operation = &operationGetClusterMapInfoResponse{}
+		case opGoldMarketGetAverageInfo:
+			operation = &operationGoldMarketGetAverageInfoResponse{}
+		default:
+			return nil, nil
+		}
 	}
 
 	err = decodeParams(params, operation)
@@ -192,15 +249,11 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		return nil, nil
 	}
 
-	// Log first 5 events with param 252 details for V18 debugging
-	if decodeEventLogCount < 5 {
-		decodeEventLogCount++
-		log.Infof("[V18-EVT] param252: type=%T val=%v | all keys: %v", params[252], params[252], paramKeys(params))
-	}
 	eventType, ok := toInt16(params[252])
 	if !ok {
 		return nil, nil
 	}
+	// Events did NOT shift with the April 13 update — only operations shifted +6
 
 	switch EventType(eventType) {
 	case evNewCharacter:
