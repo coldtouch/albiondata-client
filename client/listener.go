@@ -269,7 +269,8 @@ func (l *listener) onReliableCommand(command *photon.PhotonCommand) {
 	}
 
 	if err != nil && !ConfigGlobal.DebugIgnoreDecodingErrors {
-		log.Debugf("Error while decoding an event or operation: %v - params: %v", err, params)
+		// Log at INFO temporarily to diagnose V18 decode failures
+		log.Infof("[DecodeErr] %v", err)
 		operation = nil
 	}
 
