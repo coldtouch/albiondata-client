@@ -125,7 +125,7 @@ func (c PhotonCommand) ReliableMessage() (msg ReliableMessage, err error) {
 		if buf.Len() > 0 {
 			binary.Read(buf, binary.BigEndian, &msg.OperationDebugByte)
 			if msg.OperationDebugByte > 0 {
-				paramValue := decodeType(buf, msg.OperationDebugByte)
+				paramValue := readV18Value(buf, msg.OperationDebugByte)
 				if s, ok := paramValue.(string); ok {
 					msg.OperationDebugString = s
 				}
