@@ -71,6 +71,7 @@ type config struct {
 	UpdateGithubRepo               string
 	CaptureToken                   string // Token for authenticating with the private VPS relay
 	CaptureEnabled                 bool   // When false, chest captures are ignored (toggled via config or CLI)
+	ConfigDir                      string // Directory to search for config.yaml (--config-dir flag)
 }
 
 // config global config data
@@ -111,10 +112,38 @@ func (config *config) SetupFlags() {
 	config.setupLogs()
 }
 
+// preParseConfigDir scans os.Args for --config-dir before flag.Parse() runs,
+// since viper.ReadInConfig() is called early in setupWebsocketFlags().
+func preParseConfigDir() string {
+	for i, arg := range os.Args {
+		if arg == "--config-dir" && i+1 < len(os.Args) {
+			return os.Args[i+1]
+		}
+		if strings.HasPrefix(arg, "--config-dir=") {
+			return strings.TrimPrefix(arg, "--config-dir=")
+		}
+	}
+	return ""
+}
+
 func (config *config) setupWebsocketFlags() {
 	// Setup the config file and parse values
 	viper.SetConfigName("config")
+
+	// Pre-parse --config-dir from os.Args (flag.Parse hasn't run yet)
+	configDir := preParseConfigDir()
+	if configDir != "" {
+		viper.AddConfigPath(configDir)
+	}
+
+	// Fall back to the directory containing the executable
+	if exePath, err := os.Executable(); err == nil {
+		viper.AddConfigPath(filepath.Dir(exePath))
+	}
+
+	// Fall back to the current working directory
 	viper.AddConfigPath(".")
+
 	err := viper.ReadInConfig()
 
 	// if we cannot find the configuration file, set Websockets to false
@@ -272,6 +301,13 @@ func (config *config) setupCommonFlags() {
 		"capture",
 		true,
 		"Enable chest capture mode. Set to false to disable chest/tab scanning.",
+	)
+
+	flag.StringVar(
+		&config.ConfigDir,
+		"config-dir",
+		"",
+		"Directory to search for config.yaml. Falls back to exe directory and current directory.",
 	)
 }
 

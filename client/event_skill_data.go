@@ -45,6 +45,6 @@ func (event eventSkillData) Process(state *albionState) {
 	}
 
 	identifier, _ := uuid.NewV4()
-	log.Infof("Sending %d skills of %v to ingest", len(skills), state.CharacterName)
+	log.Infof("Sending %d skills of %v to ingest", len(skills), state.GetCharacterName())
 	sendMsgToPrivateUploaders(&upload, lib.NatsSkillData, state, identifier.String())
 }

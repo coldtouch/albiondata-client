@@ -3,7 +3,6 @@ package client
 import (
 	"time"
 
-	"github.com/ao-data/albiondata-client/lib"
 	"github.com/ao-data/albiondata-client/log"
 )
 
@@ -30,7 +29,7 @@ func (op operationAuctionBuyOfferRequest) Process(state *albionState) {
 		return
 	}
 
-	order := cached.(*lib.MarketOrder)
+	order := cached.(*cachedMarketOrder).order
 	itemName := resolveItemName(0)
 	if order.ItemID != "" {
 		itemName = order.ItemID
@@ -98,7 +97,7 @@ func (op operationAuctionCreateOfferRequest) Process(state *albionState) {
 		Amount:    qty,
 		Price:     price,
 		Total:     total,
-		Location:  state.LocationId,
+		Location:  state.GetLocationId(),
 		TradeType: "listing-created",
 		Quality:   quality,
 	})
@@ -139,7 +138,7 @@ func (op operationAuctionCreateRequestReq) Process(state *albionState) {
 		Amount:    qty,
 		Price:     price,
 		Total:     total,
-		Location:  state.LocationId,
+		Location:  state.GetLocationId(),
 		TradeType: "buy-order-placed",
 		Quality:   int(op.Quality),
 	})

@@ -20,11 +20,39 @@ type PlayerInfo struct {
 	Alliance string `json:"alliance,omitempty"`
 }
 
-var playerCache sync.Map // map[string]*PlayerInfo — key is player name
+// cachedPlayer wraps PlayerInfo with a timestamp for TTL-based eviction.
+type cachedPlayer struct {
+	info     *PlayerInfo
+	cachedAt time.Time
+}
+
+var playerCache sync.Map // map[string]*cachedPlayer — key is player name
+
+const playerCacheTTL = 30 * time.Minute
+
+func init() {
+	go playerCacheCleanup()
+}
+
+// playerCacheCleanup sweeps playerCache every 5 minutes, deleting entries older than 30 minutes.
+func playerCacheCleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		now := time.Now()
+		playerCache.Range(func(key, value interface{}) bool {
+			entry := value.(*cachedPlayer)
+			if now.Sub(entry.cachedAt) > playerCacheTTL {
+				playerCache.Delete(key)
+			}
+			return true
+		})
+	}
+}
 
 func getPlayer(name string) *PlayerInfo {
 	if val, ok := playerCache.Load(name); ok {
-		return val.(*PlayerInfo)
+		return val.(*cachedPlayer).info
 	}
 	return &PlayerInfo{Name: name}
 }
@@ -47,7 +75,7 @@ func (ev eventNewCharacter) Process(state *albionState) {
 		Guild:    ev.GuildName,
 		Alliance: ev.AllianceName,
 	}
-	playerCache.Store(ev.PlayerName, p)
+	playerCache.Store(ev.PlayerName, &cachedPlayer{info: p, cachedAt: time.Now()})
 	log.Debugf("[NewCharacter] %s [%s] <%s>", ev.PlayerName, ev.GuildName, ev.AllianceName)
 }
 
@@ -69,7 +97,7 @@ func (ev eventCharacterStats) Process(state *albionState) {
 		Guild:    ev.GuildName,
 		Alliance: ev.AllianceName,
 	}
-	playerCache.Store(ev.PlayerName, p)
+	playerCache.Store(ev.PlayerName, &cachedPlayer{info: p, cachedAt: time.Now()})
 	log.Debugf("[CharacterStats] %s [%s] <%s>", ev.PlayerName, ev.GuildName, ev.AllianceName)
 }
 
