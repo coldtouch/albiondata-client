@@ -54,6 +54,20 @@ func adjustOpCode(code int16) int16 {
 	return code - opCodeShift
 }
 
+func formatRawParams(params map[uint8]interface{}) string {
+	result := ""
+	for k, v := range params {
+		if k == 252 || k == 253 {
+			continue
+		}
+		if result != "" {
+			result += ", "
+		}
+		result += fmt.Sprintf("%d:%T=%v", k, v, v)
+	}
+	return result
+}
+
 // dumpParams logs all params for an operation — used to reverse-engineer new opcodes.
 func dumpParams(label string, code int16, params map[uint8]interface{}) {
 	log.Infof("[TRADE-DIAG] %s opcode=%d — %d params:", label, code, len(params))
@@ -257,10 +271,15 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 
 	switch EventType(eventType) {
 	case evNewCharacter:
+		// Dump raw params for first 3 NewCharacter events to map V18 layout
+		if decodeEventLogCount < 3 {
+			decodeEventLogCount++
+			log.Infof("[V18-RAW] NewCharacter params: %v", formatRawParams(params))
+		}
 		event = &eventNewCharacter{}
 	case evCharacterStats:
 		event = &eventCharacterStats{}
-	case evOtherGrabbedLoot:
+	case evOtherGrabbedLoot + 2: // April 2026 update shifted loot event 275→277
 		event = &eventOtherGrabbedLoot{}
 	case evRedZoneWorldMapEvent:
 		event = &eventRedZoneWorldMapEvent{}
