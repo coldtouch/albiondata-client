@@ -271,11 +271,6 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 
 	switch EventType(eventType) {
 	case evNewCharacter:
-		// Dump raw params for first 3 NewCharacter events to map V18 layout
-		if decodeEventLogCount < 3 {
-			decodeEventLogCount++
-			log.Infof("[V18-RAW] NewCharacter params: %v", formatRawParams(params))
-		}
 		event = &eventNewCharacter{}
 	case evCharacterStats:
 		event = &eventCharacterStats{}
