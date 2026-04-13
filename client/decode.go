@@ -308,7 +308,7 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 	case evKilledPlayer:
 		event = &eventKilledPlayer{}
 	default:
-		log.Infof("[Decode] Unhandled event code: %d (params: %d)", eventType, len(params))
+		log.Debugf("[Decode] Unhandled event code: %d (params: %d)", eventType, len(params))
 		return nil, nil
 	}
 
