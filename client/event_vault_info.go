@@ -218,10 +218,13 @@ func tabNames(tabs []VaultTab) []string {
 
 // matchContainerToVaultTab checks if a container GUID matches any known vault tab GUID.
 // Returns (tabName, tabIndex) if matched, ("", -1) if not.
+// GC-5: holds vaultMu.RLock while reading shared vault state.
 func matchContainerToVaultTab(containerGUID string) (string, int) {
 	if containerGUID == "" {
 		return "", -1
 	}
+	vaultMu.RLock()
+	defer vaultMu.RUnlock()
 	// Check guild vault tabs
 	if currentGuildVaultInfo != nil {
 		for i, tab := range currentGuildVaultInfo.Tabs {
