@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"time"
@@ -17,12 +18,25 @@ type VPSRelay struct {
 	url         string
 	token       string
 	connected   bool
-	reconnectCh chan struct{}
 	stopCh      chan struct{} // signals connectLoop to stop
-	pendingMsgs [][]byte     // bounded queue for messages during disconnect
+	ctx         context.Context
+	ctxCancel   context.CancelFunc
+	pendingMsgs [][]byte // bounded queue for messages during disconnect
 }
 
-const maxPendingMsgs = 50
+// maxPendingMsgs caps the offline queue. 500 entries covers a guild vault bulk
+// open (100 tabs × a few seconds of disconnect) without unbounded growth (GC-6).
+const maxPendingMsgs = 500
+
+// wsDialer uses an explicit handshake timeout so a slow or unresponsive VPS
+// does not block indefinitely (GC-7).
+var wsDialer = &websocket.Dialer{
+	HandshakeTimeout: 15 * time.Second,
+}
+
+// wsReadDeadline is reset after every successful message to detect half-open
+// TCP connections (GC-7).
+const wsReadDeadline = 60 * time.Second
 
 var vpsRelay *VPSRelay
 
@@ -33,11 +47,13 @@ func InitVPSRelay(captureToken string) {
 		return
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	vpsRelay = &VPSRelay{
-		url:         "wss://albionaitool.xyz",
-		token:       captureToken,
-		reconnectCh: make(chan struct{}, 1),
-		stopCh:      make(chan struct{}),
+		url:       "wss://albionaitool.xyz",
+		token:     captureToken,
+		stopCh:    make(chan struct{}),
+		ctx:       ctx,
+		ctxCancel: cancel,
 	}
 
 	go vpsRelay.connectLoop()
@@ -61,6 +77,7 @@ func StopVPSRelay() {
 	if vpsRelay == nil {
 		return
 	}
+	vpsRelay.ctxCancel() // unblocks any pending reads via conn.Close below
 	close(vpsRelay.stopCh)
 	vpsRelay.mu.Lock()
 	if vpsRelay.conn != nil {
@@ -79,6 +96,8 @@ func (r *VPSRelay) sendOrQueue(msgJSON []byte) bool {
 		if len(r.pendingMsgs) < maxPendingMsgs {
 			r.pendingMsgs = append(r.pendingMsgs, msgJSON)
 			log.Debugf("[VPSRelay] Queued message (%d pending)", len(r.pendingMsgs))
+		} else {
+			log.Warnf("[VPSRelay] Queue full (%d msgs) — dropping message", maxPendingMsgs)
 		}
 		return false
 	}
@@ -96,28 +115,42 @@ func (r *VPSRelay) sendOrQueue(msgJSON []byte) bool {
 }
 
 // flushPending sends all queued messages after a successful reconnect.
+//
+// Fix (GC-4): copy the queue under lock, clear it, then send without holding
+// the lock per-message. On failure, re-queue remaining messages (including the
+// failed one) under lock, merging with any messages added by sendOrQueue during
+// the flush window.
 func (r *VPSRelay) flushPending() {
 	r.mu.Lock()
 	if !r.connected || r.conn == nil || len(r.pendingMsgs) == 0 {
 		r.mu.Unlock()
 		return
 	}
-	pending := r.pendingMsgs
-	r.pendingMsgs = nil
+	// Snapshot and clear atomically so sendOrQueue can enqueue new messages
+	// independently while we send the batch.
+	toSend := make([][]byte, len(r.pendingMsgs))
+	copy(toSend, r.pendingMsgs)
+	r.pendingMsgs = r.pendingMsgs[:0]
+	conn := r.conn
 	r.mu.Unlock()
 
 	sent := 0
-	for _, msg := range pending {
-		r.mu.Lock()
-		if !r.connected || r.conn == nil {
-			// Re-queue remaining
-			r.pendingMsgs = append(r.pendingMsgs, pending[sent:]...)
+	for i, msg := range toSend {
+		if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			log.Errorf("[VPSRelay] Flush send failed at msg %d: %v", i, err)
+			// Re-queue remaining (including failed message) at the FRONT,
+			// then append anything sendOrQueue added while we were flushing.
+			r.mu.Lock()
+			r.connected = false
+			remaining := toSend[i:] // toSend[i] is the failed message
+			combined := make([][]byte, 0, len(remaining)+len(r.pendingMsgs))
+			combined = append(combined, remaining...)
+			combined = append(combined, r.pendingMsgs...)
+			if len(combined) > maxPendingMsgs {
+				combined = combined[len(combined)-maxPendingMsgs:]
+			}
+			r.pendingMsgs = combined
 			r.mu.Unlock()
-			break
-		}
-		err := r.conn.WriteMessage(websocket.TextMessage, msg)
-		r.mu.Unlock()
-		if err != nil {
 			break
 		}
 		sent++
@@ -138,11 +171,24 @@ func (r *VPSRelay) connect() {
 
 	log.Debug("[VPSRelay] Connecting...")
 
-	conn, _, err := websocket.DefaultDialer.Dial(r.url, nil)
+	// GC-7: explicit handshake timeout via wsDialer (not DefaultDialer).
+	conn, _, err := wsDialer.Dial(r.url, nil)
 	if err != nil {
 		log.Debugf("[VPSRelay] Connection failed: %v", err)
 		return
 	}
+
+	// GC-3: close the connection when the relay is stopped so that any
+	// goroutine blocked on ReadMessage returns immediately.
+	stopConn := make(chan struct{})
+	go func() {
+		select {
+		case <-r.ctx.Done():
+			conn.Close()
+		case <-stopConn:
+		}
+	}()
+	defer close(stopConn)
 
 	r.mu.Lock()
 	r.conn = conn
@@ -159,13 +205,14 @@ func (r *VPSRelay) connect() {
 		return
 	}
 
-	// Read messages until we get the auth response
+	// Read messages until we get the auth response.
 	// (server broadcasts NATS market data to all WS clients, so first messages may not be auth)
-	authTimeout := time.After(15 * time.Second)
+	authTimeout := time.After(30 * time.Second)
 	authDone := make(chan bool, 1)
 
 	go func() {
 		for {
+			_ = conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
 				log.Debug("[VPSRelay] Connection lost during auth")
@@ -202,13 +249,15 @@ func (r *VPSRelay) connect() {
 			return
 		}
 	case <-authTimeout:
-		log.Warn("[VPSRelay] Auth timed out after 15s")
+		log.Warn("[VPSRelay] Auth timed out after 30s")
 		conn.Close()
 		return
 	}
 
-	// Keep connection alive — read and discard server messages
+	// Keep connection alive — read and discard server messages.
+	// GC-7: reset read deadline after every successful message.
 	for {
+		_ = conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
 		_, _, err := conn.ReadMessage()
 		if err != nil {
 			log.Debug("[VPSRelay] Connection lost, will reconnect...")
