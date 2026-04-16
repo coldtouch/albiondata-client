@@ -8,12 +8,21 @@ import (
 	photon "github.com/ao-data/photon-spectator"
 )
 
+// routerWorkerCount bounds the number of goroutines processing operations
+// concurrently. Prevents goroutine explosion during market-flood or bulk
+// vault opens (GC-1 / GC-8).
+const (
+	routerWorkerCount = 16
+	routerQueueSize   = 1024
+)
+
 //Router struct definitions
 type Router struct {
 	albionstate         *albionState
 	newOperation        chan operation
 	recordPhotonCommand chan photon.PhotonCommand
 	quit                chan bool
+	workQueue           chan operation
 }
 
 func newRouter() *Router {
@@ -22,6 +31,7 @@ func newRouter() *Router {
 		newOperation:        make(chan operation, 1000),
 		recordPhotonCommand: make(chan photon.PhotonCommand, 1000),
 		quit:                make(chan bool, 1),
+		workQueue:           make(chan operation, routerQueueSize),
 	}
 }
 
@@ -38,10 +48,20 @@ func (r *Router) run() {
 		}
 	}
 
+	// Bounded worker pool — goroutines exit when workQueue is closed.
+	for i := 0; i < routerWorkerCount; i++ {
+		go func() {
+			for op := range r.workQueue {
+				op.Process(r.albionstate)
+			}
+		}()
+	}
+
 	for {
 		select {
 		case <-r.quit:
 			log.Debug("Closing router...")
+			close(r.workQueue) // drains workers gracefully
 			if file != nil {
 				err := file.Close()
 				if err != nil {
@@ -50,7 +70,11 @@ func (r *Router) run() {
 			}
 			return
 		case op := <-r.newOperation:
-			go op.Process(r.albionstate)
+			select {
+			case r.workQueue <- op:
+			default:
+				log.Warn("[Router] Work queue full — dropping operation")
+			}
 		case command := <-r.recordPhotonCommand:
 			if encoder != nil {
 				err := encoder.Encode(command)
