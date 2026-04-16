@@ -27,15 +27,18 @@ func (event eventNewSimpleItem) Process(state *albionState) {
 	log.Debugf("[SimpleItem] slot=%d item=%s (id=%d) qty=%d", event.SlotPosition, itemName, event.ItemTypeID, qty)
 
 	// Store in global cache — evAttachItemContainer will look these up by slot
-	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
-		ItemID:      itemName,
-		NumericID:   int(event.ItemTypeID),
-		Quality:     1, // Simple items are always Normal quality
-		Quantity:    qty,
-		Enchantment: 0,
-		IsEquipment: false,
-		Slot:        int(event.SlotPosition),
-		Weight:      resolveItemWeight(int(event.ItemTypeID)),
+	globalItemCache.Store(int(event.SlotPosition), cachedItemEntry{
+		item: CapturedItem{
+			ItemID:      itemName,
+			NumericID:   int(event.ItemTypeID),
+			Quality:     1, // Simple items are always Normal quality
+			Quantity:    qty,
+			Enchantment: 0,
+			IsEquipment: false,
+			Slot:        int(event.SlotPosition),
+			Weight:      resolveItemWeight(int(event.ItemTypeID)),
+		},
+		cachedAt: time.Now(),
 	})
 }
 
@@ -62,16 +65,19 @@ func (event eventNewEquipmentItem) Process(state *albionState) {
 	log.Debugf("[EquipItem] slot=%d item=%s (id=%d) quality=%d crafter=%s", event.SlotPosition, itemName, event.ItemTypeID, qual, event.CrafterName)
 
 	// Store in global cache — evAttachItemContainer will look these up by slot
-	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
-		ItemID:      itemName,
-		NumericID:   int(event.ItemTypeID),
-		Quality:     qual,
-		Quantity:    1, // Equipment is always qty 1
-		Enchantment: int(event.Enchantment),
-		IsEquipment: true,
-		Slot:        int(event.SlotPosition),
-		CrafterName: event.CrafterName,
-		Weight:      resolveItemWeight(int(event.ItemTypeID)),
+	globalItemCache.Store(int(event.SlotPosition), cachedItemEntry{
+		item: CapturedItem{
+			ItemID:      itemName,
+			NumericID:   int(event.ItemTypeID),
+			Quality:     qual,
+			Quantity:    1, // Equipment is always qty 1
+			Enchantment: int(event.Enchantment),
+			IsEquipment: true,
+			Slot:        int(event.SlotPosition),
+			CrafterName: event.CrafterName,
+			Weight:      resolveItemWeight(int(event.ItemTypeID)),
+		},
+		cachedAt: time.Now(),
 	})
 }
 
@@ -100,14 +106,17 @@ func (event eventNewJournalItem) Process(state *albionState) {
 	log.Debugf("[JournalItem] slot=%d item=%s qty=%d", event.SlotPosition, itemName, qty)
 
 	// Store in global cache
-	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
-		ItemID:      itemName,
-		NumericID:   int(event.ItemTypeID),
-		Quality:     1,
-		Quantity:    qty,
-		IsEquipment: false,
-		Slot:        int(event.SlotPosition),
-		Weight:      resolveItemWeight(int(event.ItemTypeID)),
+	globalItemCache.Store(int(event.SlotPosition), cachedItemEntry{
+		item: CapturedItem{
+			ItemID:      itemName,
+			NumericID:   int(event.ItemTypeID),
+			Quality:     1,
+			Quantity:    qty,
+			IsEquipment: false,
+			Slot:        int(event.SlotPosition),
+			Weight:      resolveItemWeight(int(event.ItemTypeID)),
+		},
+		cachedAt: time.Now(),
 	})
 }
 
@@ -127,14 +136,17 @@ func (event eventNewFurnitureItem) Process(state *albionState) {
 	}
 	log.Debugf("[FurnitureItem] slot=%d item=%s (id=%d) quality=%d", event.SlotPosition, itemName, event.ItemTypeID, qual)
 
-	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
-		ItemID:      itemName,
-		NumericID:   int(event.ItemTypeID),
-		Quality:     qual,
-		Quantity:    1,
-		IsEquipment: false,
-		Slot:        int(event.SlotPosition),
-		Weight:      resolveItemWeight(int(event.ItemTypeID)),
+	globalItemCache.Store(int(event.SlotPosition), cachedItemEntry{
+		item: CapturedItem{
+			ItemID:      itemName,
+			NumericID:   int(event.ItemTypeID),
+			Quality:     qual,
+			Quantity:    1,
+			IsEquipment: false,
+			Slot:        int(event.SlotPosition),
+			Weight:      resolveItemWeight(int(event.ItemTypeID)),
+		},
+		cachedAt: time.Now(),
 	})
 }
 
@@ -154,14 +166,17 @@ func (event eventNewKillTrophyItem) Process(state *albionState) {
 	}
 	log.Debugf("[KillTrophyItem] slot=%d item=%s (id=%d) quality=%d", event.SlotPosition, itemName, event.ItemTypeID, qual)
 
-	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
-		ItemID:      itemName,
-		NumericID:   int(event.ItemTypeID),
-		Quality:     qual,
-		Quantity:    1,
-		IsEquipment: false,
-		Slot:        int(event.SlotPosition),
-		Weight:      resolveItemWeight(int(event.ItemTypeID)),
+	globalItemCache.Store(int(event.SlotPosition), cachedItemEntry{
+		item: CapturedItem{
+			ItemID:      itemName,
+			NumericID:   int(event.ItemTypeID),
+			Quality:     qual,
+			Quantity:    1,
+			IsEquipment: false,
+			Slot:        int(event.SlotPosition),
+			Weight:      resolveItemWeight(int(event.ItemTypeID)),
+		},
+		cachedAt: time.Now(),
 	})
 }
 
@@ -181,14 +196,17 @@ func (event eventNewLaborerItem) Process(state *albionState) {
 	}
 	log.Debugf("[LaborerItem] slot=%d item=%s (id=%d) qty=%d", event.SlotPosition, itemName, event.ItemTypeID, qty)
 
-	globalItemCache.Store(int(event.SlotPosition), CapturedItem{
-		ItemID:      itemName,
-		NumericID:   int(event.ItemTypeID),
-		Quality:     1,
-		Quantity:    qty,
-		IsEquipment: false,
-		Slot:        int(event.SlotPosition),
-		Weight:      resolveItemWeight(int(event.ItemTypeID)),
+	globalItemCache.Store(int(event.SlotPosition), cachedItemEntry{
+		item: CapturedItem{
+			ItemID:      itemName,
+			NumericID:   int(event.ItemTypeID),
+			Quality:     1,
+			Quantity:    qty,
+			IsEquipment: false,
+			Slot:        int(event.SlotPosition),
+			Weight:      resolveItemWeight(int(event.ItemTypeID)),
+		},
+		cachedAt: time.Now(),
 	})
 }
 
@@ -197,8 +215,37 @@ func (event eventNewLaborerItem) Process(state *albionState) {
 // Each item has a unique global slot number. evAttachItemContainer param 3 contains
 // the slot numbers that belong to a specific container tab. We look them up here.
 
-var globalItemCache sync.Map // map[int]CapturedItem — key is global slot number
-var itemCacheCount int64      // approximate count for eviction decisions
+// cachedItemEntry wraps a CapturedItem with a timestamp for TTL eviction (GC-2).
+type cachedItemEntry struct {
+	item     CapturedItem
+	cachedAt time.Time
+}
+
+var globalItemCache sync.Map // map[int]cachedItemEntry — key is global slot number
+var itemCacheCount int64      // approximate count (informational)
+
+func init() {
+	// Periodic TTL eviction — prevents OOM on long play sessions (GC-2).
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			cutoff := time.Now().Add(-30 * time.Minute)
+			evicted := 0
+			globalItemCache.Range(func(k, v interface{}) bool {
+				if entry, ok := v.(cachedItemEntry); ok && entry.cachedAt.Before(cutoff) {
+					globalItemCache.Delete(k)
+					evicted++
+				}
+				return true
+			})
+			if evicted > 0 {
+				atomic.AddInt64(&itemCacheCount, -int64(evicted))
+				log.Debugf("[ItemCache] Evicted %d stale entries (>30 min old)", evicted)
+			}
+		}
+	}()
+}
 
 // ClearItemCache removes all entries from the global item cache.
 // Called on zone transitions to prevent unbounded memory growth.
@@ -250,7 +297,7 @@ func BuildCaptureFromSlots(slotIDs []int, containerGUID string, tabName string, 
 			continue // empty slot
 		}
 		if val, ok := globalItemCache.Load(slotID); ok {
-			item := val.(CapturedItem)
+			item := val.(cachedItemEntry).item
 			if IsSpecialItem(item.NumericID) {
 				log.Debugf("[ContainerCapture] Skipping special item at slot %d: %s (id=%d)", slotID, item.ItemID, item.NumericID)
 				continue
