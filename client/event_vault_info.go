@@ -244,14 +244,16 @@ func matchContainerToVaultTab(containerGUID string) (string, int) {
 // GetCurrentVaultTabs returns the combined vault tab info.
 // Guild island chests fire BOTH GuildVaultInfo (guild tabs) and BankVaultInfo (personal bank tab).
 // We merge them so all tabs (guild + personal) are in one list for GUID matching.
+//
+// All returned values are independent copies — callers must not mutate them.
 func GetCurrentVaultTabs() *VaultInfo {
 	vaultMu.RLock()
-	defer vaultMu.RUnlock()
 	guildFresh := currentGuildVaultInfo != nil
 	bankFresh := currentBankVaultInfo != nil
 
 	if guildFresh && bankFresh {
-		// Merge: guild tabs + bank tabs into one combined VaultInfo
+		// Merge: guild tabs + bank tabs into one combined VaultInfo.
+		// Build entirely under RLock so we read consistent state.
 		merged := &VaultInfo{
 			ObjectID: currentGuildVaultInfo.ObjectID,
 			Location: currentGuildVaultInfo.Location,
@@ -259,7 +261,6 @@ func GetCurrentVaultTabs() *VaultInfo {
 			Tabs:     make([]VaultTab, 0, len(currentGuildVaultInfo.Tabs)+len(currentBankVaultInfo.Tabs)),
 		}
 		merged.Tabs = append(merged.Tabs, currentGuildVaultInfo.Tabs...)
-		// Append bank tabs with friendly name for the default bank tab
 		for _, tab := range currentBankVaultInfo.Tabs {
 			bankTab := tab
 			if bankTab.Name == "@BUILDINGS_T1_BANK" || bankTab.Name == "" {
@@ -267,22 +268,35 @@ func GetCurrentVaultTabs() *VaultInfo {
 			}
 			merged.Tabs = append(merged.Tabs, bankTab)
 		}
+		guildLen := len(currentGuildVaultInfo.Tabs)
+		bankLen := len(currentBankVaultInfo.Tabs)
+		vaultMu.RUnlock()
 		log.Debugf("[VaultInfo] Using merged vault info with %d tabs (%d guild + %d bank)",
-			len(merged.Tabs), len(currentGuildVaultInfo.Tabs), len(currentBankVaultInfo.Tabs))
+			len(merged.Tabs), guildLen, bankLen)
 		return merged
 	} else if guildFresh {
-		log.Debugf("[VaultInfo] Using guild vault info with %d tabs", len(currentGuildVaultInfo.Tabs))
-		return currentGuildVaultInfo
+		// Return pointer to shared struct — guild tabs are never mutated here.
+		result := currentGuildVaultInfo
+		tabCount := len(result.Tabs)
+		vaultMu.RUnlock()
+		log.Debugf("[VaultInfo] Using guild vault info with %d tabs", tabCount)
+		return result
 	} else if bankFresh {
-		// Rename default bank tab
-		for i, tab := range currentBankVaultInfo.Tabs {
+		// Build an independent copy and rename default bank tabs on the copy,
+		// NOT on the shared struct — mutating under RLock is a data race (GC-5).
+		bankCopy := *currentBankVaultInfo
+		bankCopy.Tabs = make([]VaultTab, len(currentBankVaultInfo.Tabs))
+		copy(bankCopy.Tabs, currentBankVaultInfo.Tabs)
+		vaultMu.RUnlock()
+		for i, tab := range bankCopy.Tabs {
 			if tab.Name == "@BUILDINGS_T1_BANK" || tab.Name == "" {
-				currentBankVaultInfo.Tabs[i].Name = "Bank"
+				bankCopy.Tabs[i].Name = "Bank"
 			}
 		}
-		log.Debugf("[VaultInfo] Using bank vault info with %d tabs", len(currentBankVaultInfo.Tabs))
-		return currentBankVaultInfo
+		log.Debugf("[VaultInfo] Using bank vault info with %d tabs", len(bankCopy.Tabs))
+		return &bankCopy
 	}
 
+	vaultMu.RUnlock()
 	return nil
 }
