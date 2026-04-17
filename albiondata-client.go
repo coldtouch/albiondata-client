@@ -16,7 +16,14 @@ import (
 	"github.com/ao-data/go-githubupdate/updater"
 )
 
+// version and buildDate are injected at build time via:
+//
+//	go build -ldflags "-X main.version=v1.2.3 -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+//
+// When unset (e.g. local dev builds) we fall back to "dev" / "unknown" so the
+// updater stays disabled and `--version` still prints something useful (DO-4).
 var version string
+var buildDate string
 
 func init() {
 	client.ConfigGlobal.SetupFlags()
@@ -24,7 +31,16 @@ func init() {
 
 func main() {
 	if client.ConfigGlobal.PrintVersion {
-		log.Infof("Albion Data Client, version: %s", version)
+		v := version
+		if v == "" {
+			v = "dev"
+		}
+		bd := buildDate
+		if bd == "" {
+			bd = "unknown"
+		}
+		log.Infof("Albion Data Client (Coldtouch fork), version: %s, built: %s, runtime: %s/%s, go: %s",
+			v, bd, runtime.GOOS, runtime.GOARCH, runtime.Version())
 		return
 	}
 

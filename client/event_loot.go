@@ -27,11 +27,23 @@ type cachedPlayer struct {
 }
 
 var playerCache sync.Map // map[string]*cachedPlayer — key is player name
+var objectIDToName sync.Map // map[int64]string — populated by eventNewCharacter / eventCharacterStats
 
 const playerCacheTTL = 30 * time.Minute
 
 func init() {
 	go playerCacheCleanup()
+}
+
+// playerNameByObjectID returns the cached character name for an objectID, or ""
+// if we have not yet seen that character in range.
+func playerNameByObjectID(objectID int64) string {
+	if v, ok := objectIDToName.Load(objectID); ok {
+		if s, ok2 := v.(string); ok2 {
+			return s
+		}
+	}
+	return ""
 }
 
 // playerCacheCleanup sweeps playerCache every 5 minutes, deleting entries older than 30 minutes.
@@ -76,6 +88,9 @@ func (ev eventNewCharacter) Process(state *albionState) {
 		Alliance: ev.AllianceName,
 	}
 	playerCache.Store(ev.PlayerName, &cachedPlayer{info: p, cachedAt: time.Now()})
+	if ev.ObjectID != 0 {
+		objectIDToName.Store(ev.ObjectID, ev.PlayerName)
+	}
 	log.Debugf("[NewCharacter] %s [%s] <%s>", ev.PlayerName, ev.GuildName, ev.AllianceName)
 }
 
@@ -98,6 +113,9 @@ func (ev eventCharacterStats) Process(state *albionState) {
 		Alliance: ev.AllianceName,
 	}
 	playerCache.Store(ev.PlayerName, &cachedPlayer{info: p, cachedAt: time.Now()})
+	if ev.ObjectID != 0 {
+		objectIDToName.Store(ev.ObjectID, ev.PlayerName)
+	}
 	log.Debugf("[CharacterStats] %s [%s] <%s>", ev.PlayerName, ev.GuildName, ev.AllianceName)
 }
 

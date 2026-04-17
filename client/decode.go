@@ -314,6 +314,10 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventKilledPlayer{}
 	case evKilledPlayer + 2: // April 2026 update shifted +2
 		event = &eventKilledPlayer{}
+	case evCharacterEquipmentChanged:
+		event = &eventCharacterEquipmentChanged{}
+	case evCharacterEquipmentChanged + 2: // April 2026 update shifted +2 (precaution)
+		event = &eventCharacterEquipmentChanged{}
 	default:
 		log.Debugf("[Decode] Unhandled event code: %d (params: %d)", eventType, len(params))
 		return nil, nil

@@ -8,11 +8,12 @@ import (
 
 // DeathEvent is the payload sent to the VPS relay for kill/death events.
 type DeathEvent struct {
-	Timestamp   int64  `json:"timestamp"`   // Unix millis
-	VictimName  string `json:"victimName"`
-	VictimGuild string `json:"victimGuild"`
-	KillerName  string `json:"killerName"`
-	KillerGuild string `json:"killerGuild"`
+	Timestamp        int64          `json:"timestamp"` // Unix millis
+	VictimName       string         `json:"victimName"`
+	VictimGuild      string         `json:"victimGuild"`
+	KillerName       string         `json:"killerName"`
+	KillerGuild      string         `json:"killerGuild"`
+	EquipmentAtDeath []EquippedItem `json:"equipmentAtDeath,omitempty"` // B6
 }
 
 // eventDied fires on the victim's client when they die (opcode 165).
@@ -29,11 +30,12 @@ func (ev eventDied) Process(state *albionState) {
 		ev.KillerName, ev.KillerGuild)
 
 	deathEvent := &DeathEvent{
-		Timestamp:   time.Now().UnixMilli(),
-		VictimName:  ev.VictimName,
-		VictimGuild: ev.VictimGuild,
-		KillerName:  ev.KillerName,
-		KillerGuild: ev.KillerGuild,
+		Timestamp:        time.Now().UnixMilli(),
+		VictimName:       ev.VictimName,
+		VictimGuild:      ev.VictimGuild,
+		KillerName:       ev.KillerName,
+		KillerGuild:      ev.KillerGuild,
+		EquipmentAtDeath: getEquipmentForPlayer(ev.VictimName),
 	}
 	SendDeathEvent(deathEvent)
 }
@@ -52,11 +54,12 @@ func (ev eventKilledPlayer) Process(state *albionState) {
 		ev.VictimName, ev.VictimGuild)
 
 	deathEvent := &DeathEvent{
-		Timestamp:   time.Now().UnixMilli(),
-		VictimName:  ev.VictimName,
-		VictimGuild: ev.VictimGuild,
-		KillerName:  ev.KillerName,
-		KillerGuild: ev.KillerGuild,
+		Timestamp:        time.Now().UnixMilli(),
+		VictimName:       ev.VictimName,
+		VictimGuild:      ev.VictimGuild,
+		KillerName:       ev.KillerName,
+		KillerGuild:      ev.KillerGuild,
+		EquipmentAtDeath: getEquipmentForPlayer(ev.VictimName),
 	}
 	SendDeathEvent(deathEvent)
 }
