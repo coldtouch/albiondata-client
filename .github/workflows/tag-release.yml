@@ -1,0 +1,57 @@
+name: Tag → Release
+
+# Creates a GitHub Release automatically when a `v*.*.*` tag is pushed.
+# The existing release.yml then fires on `release: created` and uploads binaries.
+# Pattern: bump the tag locally (`git tag v1.2.3 && git push --tags`) to cut a release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive release notes (last 20 commits since previous tag)
+        id: notes
+        shell: bash
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            echo "Prior tag: $PREV_TAG" >&2
+            LOG=$(git log --pretty='- %s (%h)' "${PREV_TAG}..${GITHUB_REF_NAME}" | head -40)
+          else
+            LOG=$(git log --pretty='- %s (%h)' -n 20 "${GITHUB_REF_NAME}")
+          fi
+          {
+            echo "notes<<EOF"
+            echo "## Changes"
+            echo
+            if [ -n "$LOG" ]; then echo "$LOG"; else echo "No commits between tags."; fi
+            echo
+            echo "## Binaries"
+            echo "- Windows installer: \`albiondata-client-amd64-installer.exe\`"
+            echo "- Windows update archive: \`update-windows-amd64.exe.gz\`"
+            echo "- Linux update archive: \`update-linux-amd64.gz\`"
+            echo "- macOS update archive: \`update-darwin-amd64.gz\`"
+            echo "- macOS zip: \`albiondata-client-amd64-mac.zip\`"
+            echo "- Data files: \`itemmap.json\`, \`weightmap.json\`, \`config.yaml.example\`"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: ${{ steps.notes.outputs.notes }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}

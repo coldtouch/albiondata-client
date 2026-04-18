@@ -1,0 +1,40 @@
+name: CI — Build + Vet
+
+# Runs on every push / PR to master so we catch compile breaks before a release tag is cut.
+# (The existing release.yml only fires on `release: created`, which is too late to catch regressions.)
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-vet:
+    name: Build + Vet (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+
+      - name: Go mod tidy (verify)
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test (short)
+        run: go test -short -timeout=90s ./...
