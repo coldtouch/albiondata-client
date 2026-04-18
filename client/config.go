@@ -72,12 +72,14 @@ type config struct {
 	CaptureToken                   string // Token for authenticating with the private VPS relay
 	CaptureEnabled                 bool   // When false, chest captures are ignored (toggled via config or CLI)
 	ConfigDir                      string // Directory to search for config.yaml (--config-dir flag)
+	LogUnknownEvents               bool   // When true, writes unrecognised opcodes to logs/unknown-events-<ts>.log for reverse-engineering
 }
 
 // config global config data
 var ConfigGlobal = &config{
 	LogLevel:          "INFO",
 	CaptureEnabled:    true,
+	LogUnknownEvents:  false,
 	UpdateGithubOwner: "coldtouch",
 	UpdateGithubRepo:  "albiondata-client"}
 
@@ -162,6 +164,11 @@ func (config *config) setupWebsocketFlags() {
 	// Load capture enabled setting from config file (defaults to true)
 	if viper.IsSet("CaptureEnabled") {
 		config.CaptureEnabled = viper.GetBool("CaptureEnabled")
+	}
+
+	// Load unknown-events logger setting (defaults to false)
+	if viper.IsSet("LogUnknownEvents") {
+		config.LogUnknownEvents = viper.GetBool("LogUnknownEvents")
 	}
 
 	// Allow config.yaml to override the update owner/repo (useful for dev/testing).
@@ -308,6 +315,13 @@ func (config *config) setupCommonFlags() {
 		"config-dir",
 		"",
 		"Directory to search for config.yaml. Falls back to exe directory and current directory.",
+	)
+
+	flag.BoolVar(
+		&config.LogUnknownEvents,
+		"log-unknown-events",
+		false,
+		"Write unrecognised opcodes to logs/unknown-events-<ts>.log for reverse-engineering. Use during PvP to discover events the client doesn't handle yet.",
 	)
 }
 

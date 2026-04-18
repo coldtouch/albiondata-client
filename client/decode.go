@@ -165,6 +165,8 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		case opAuctionCreateRequest:
 			operation = &operationAuctionCreateRequestReq{}
 		default:
+			// Neither the raw nor shifted opcode matched — record for reverse-engineering.
+			recordUnknownEvent("REQUEST", rawCode, params)
 			return nil, nil
 		}
 	}
@@ -249,6 +251,8 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		case opGoldMarketGetAverageInfo:
 			operation = &operationGoldMarketGetAverageInfoResponse{}
 		default:
+			// Neither the raw nor shifted opcode matched.
+			recordUnknownEvent("RESPONSE", rawCode, params)
 			return nil, nil
 		}
 	}
@@ -320,6 +324,7 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventCharacterEquipmentChanged{}
 	default:
 		log.Debugf("[Decode] Unhandled event code: %d (params: %d)", eventType, len(params))
+		recordUnknownEvent("EVENT", eventType, params)
 		return nil, nil
 	}
 
