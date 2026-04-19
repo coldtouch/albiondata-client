@@ -2,7 +2,9 @@ package client
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -17,11 +19,25 @@ type VPSRelay struct {
 	conn        *websocket.Conn
 	url         string
 	token       string
+	sessionID   string // UUID per game run — survives WS reconnects so loot events don't fragment
 	connected   bool
 	stopCh      chan struct{} // signals connectLoop to stop
 	ctx         context.Context
 	ctxCancel   context.CancelFunc
 	pendingMsgs [][]byte // bounded queue for messages during disconnect
+}
+
+// newSessionUUID returns a UUIDv4 string. Used once per game run; survives WS reconnects.
+// Backend uses this as loot_events.session_id so one PvP run = one Loot Logger session,
+// instead of N fragments (one per reconnect) as it was before.
+func newSessionUUID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("fallback-%d", time.Now().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40 // UUID v4
+	b[8] = (b[8] & 0x3f) | 0x80 // RFC 4122 variant
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // maxPendingMsgs caps the offline queue. 500 entries covers a guild vault bulk
@@ -51,13 +67,14 @@ func InitVPSRelay(captureToken string) {
 	vpsRelay = &VPSRelay{
 		url:       "wss://albionaitool.xyz",
 		token:     captureToken,
+		sessionID: newSessionUUID(),
 		stopCh:    make(chan struct{}),
 		ctx:       ctx,
 		ctxCancel: cancel,
 	}
 
 	go vpsRelay.connectLoop()
-	log.Infof("[VPSRelay] Initialized — will relay chest captures to %s", vpsRelay.url)
+	log.Infof("[VPSRelay] Initialized — will relay chest captures to %s (sessionID=%s)", vpsRelay.url, vpsRelay.sessionID)
 }
 
 func (r *VPSRelay) connectLoop() {
@@ -194,10 +211,14 @@ func (r *VPSRelay) connect() {
 	r.conn = conn
 	r.mu.Unlock()
 
-	// Authenticate with capture token
+	// Authenticate with capture token + per-run session UUID.
+	// The sessionID is generated once at process start (InitVPSRelay) and re-sent on every
+	// reconnect; the backend pins ws.lootSessionId to this value so loot events across
+	// reconnects land in the SAME session instead of fragmenting into one session per reconnect.
 	authMsg := map[string]interface{}{
-		"type":  "client-auth",
-		"token": r.token,
+		"type":      "client-auth",
+		"token":     r.token,
+		"sessionID": r.sessionID,
 	}
 	authJSON, _ := json.Marshal(authMsg)
 	if err := conn.WriteMessage(websocket.TextMessage, authJSON); err != nil {
