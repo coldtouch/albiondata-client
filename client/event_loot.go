@@ -267,6 +267,41 @@ func (w *lootFileWriter) append(ev *LootEvent) {
 	_ = w.file.Sync()
 }
 
+// appendDeath writes a single death event to the loot log file using the
+// __DEATH__ sentinel item_id. The backend upload parser + frontend Loot Logger
+// both recognize this marker and render it as a death (not a regular loot row).
+//
+// Row layout reuses the standard schema:
+//   looted_by_* = killer
+//   looted_from_* = victim
+//   item_id / item_name = "__DEATH__"
+//   quantity = 1
+func (w *lootFileWriter) appendDeath(ev *DeathEvent) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if err := w.ensureInit(); err != nil {
+		log.Errorf("[LootLog] %v", err)
+		return
+	}
+
+	ts := time.UnixMilli(ev.Timestamp).UTC().Format(time.RFC3339)
+	// Alliance is not available on DeathEvent today — leave blank for now.
+	fmt.Fprintf(w.file, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
+		ts,
+		"",             // killer alliance
+		ev.KillerGuild, // killer guild
+		ev.KillerName,  // killer name
+		"__DEATH__",    // item_id sentinel
+		"__DEATH__",    // item_name sentinel
+		1,
+		"",             // victim alliance
+		ev.VictimGuild, // victim guild
+		ev.VictimName,  // victim name
+	)
+	_ = w.file.Sync()
+}
+
 // CloseLootFile flushes and closes the loot log file. Call on shutdown.
 func CloseLootFile() {
 	lootWriter.mu.Lock()

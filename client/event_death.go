@@ -37,6 +37,8 @@ func (ev eventDied) Process(state *albionState) {
 		KillerGuild:      ev.KillerGuild,
 		EquipmentAtDeath: getEquipmentForPlayer(ev.VictimName),
 	}
+	// Persist to the local .txt log file (so offline uploads carry deaths, not just loot)
+	lootWriter.appendDeath(deathEvent)
 	SendDeathEvent(deathEvent)
 }
 
@@ -61,5 +63,7 @@ func (ev eventKilledPlayer) Process(state *albionState) {
 		KillerGuild:      ev.KillerGuild,
 		EquipmentAtDeath: getEquipmentForPlayer(ev.VictimName),
 	}
+	// Persist to the local .txt log file (so offline uploads carry deaths, not just loot)
+	lootWriter.appendDeath(deathEvent)
 	SendDeathEvent(deathEvent)
 }
