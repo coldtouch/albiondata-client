@@ -1,7 +1,7 @@
 package client
 
 import (
-	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/ao-data/albiondata-client/log"
@@ -29,7 +29,7 @@ type MailInfo struct {
 
 func (m *MailInfo) StringArray() []string {
 	return []string{
-		fmt.Sprintf("%d", m.ID),
+		strconv.Itoa(int(m.ID)),
 		m.LocationID,
 		m.OrderType,
 		m.StringExpires(),

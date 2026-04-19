@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/ao-data/albiondata-client/log"
 )
@@ -92,8 +93,7 @@ func LoadWeightMap() {
 
 // resolveItemWeight returns the weight in kg for a numeric item type ID. Returns 0 if unknown.
 func resolveItemWeight(numericID int) float64 {
-	key := fmt.Sprintf("%d", numericID)
-	if w, ok := itemWeightMap[key]; ok {
+	if w, ok := itemWeightMap[strconv.Itoa(numericID)]; ok {
 		return w
 	}
 	return 0
@@ -105,8 +105,7 @@ func resolveItemName(numericID int) string {
 	if name, ok := specialItemNames[numericID]; ok {
 		return name
 	}
-	key := fmt.Sprintf("%d", numericID)
-	if name, ok := itemNameMap[key]; ok {
+	if name, ok := itemNameMap[strconv.Itoa(numericID)]; ok {
 		return name
 	}
 	return fmt.Sprintf("UNKNOWN_%d", numericID)
