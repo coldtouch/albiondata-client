@@ -46,12 +46,13 @@ func main() {
 
 	startUpdater()
 
-	// Save loot log on shutdown (Ctrl+C, SIGTERM, window close)
+	// Graceful shutdown on Ctrl+C / SIGTERM
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		log.Info("Shutting down — closing loot log + unknown-events log...")
+		log.Info("Shutting down...")
+		client.StopVPSRelay() // close WS connection and drain the send goroutine
 		client.CloseLootFile()
 		client.CloseUnknownLogger()
 		os.Exit(0)
