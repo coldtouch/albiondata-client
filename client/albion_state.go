@@ -141,18 +141,29 @@ func (state *albionState) SetBanditEventLastTimeSubmitted(v time.Time) {
 	state.BanditEventLastTimeSubmitted = v
 }
 
-// SetServerFromIP sets GameServerIP and derives AODataServerID and AODataIngestBaseURL.
-// This is a combined setter to avoid holding the lock across multiple calls.
+// SetServerFromIP sets GameServerIP and derives AODataServerID and AODataIngestBaseURL
+// in a single lock acquisition (GO-H3). If the IP does not match a known Albion server
+// range the existing AODataServerID/URL are left unchanged.
 func (state *albionState) SetServerFromIP(ip string) {
 	state.mu.Lock()
+	defer state.mu.Unlock()
+
 	state.GameServerIP = ip
-	state.mu.Unlock()
-	// GetServer reads fields under its own RLock
-	id, url := state.GetServer()
-	state.mu.Lock()
-	state.AODataServerID = id
-	state.AODataIngestBaseURL = url
-	state.mu.Unlock()
+
+	switch {
+	case strings.HasPrefix(ip, "5.188.125."):
+		state.AODataServerID = 1
+		state.AODataIngestBaseURL = "https+pow://pow.west.albion-online-data.com"
+		log.Tracef("SetServerFromIP: west server (ip: %v)", ip)
+	case strings.HasPrefix(ip, "5.45.187."):
+		state.AODataServerID = 2
+		state.AODataIngestBaseURL = "https+pow://pow.east.albion-online-data.com"
+		log.Tracef("SetServerFromIP: east server (ip: %v)", ip)
+	case strings.HasPrefix(ip, "193.169.238."):
+		state.AODataServerID = 3
+		state.AODataIngestBaseURL = "https+pow://pow.europe.albion-online-data.com"
+		log.Tracef("SetServerFromIP: EU server (ip: %v)", ip)
+	}
 }
 
 func (state *albionState) IsValidLocation() bool {
