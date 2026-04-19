@@ -69,7 +69,11 @@ func formatRawParams(params map[uint8]interface{}) string {
 }
 
 // dumpParams logs all params for an operation — used to reverse-engineer new opcodes.
+// Only emits output when --debug is active to avoid polluting production logs (GO-M3).
 func dumpParams(label string, code int16, params map[uint8]interface{}) {
+	if !ConfigGlobal.Debug {
+		return
+	}
 	log.Infof("[TRADE-DIAG] %s opcode=%d — %d params:", label, code, len(params))
 	for k, v := range params {
 		if k == 253 || k == 255 {
