@@ -2,9 +2,10 @@ package client
 
 import (
 	"context"
-	"crypto/rand"
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -32,7 +33,7 @@ type VPSRelay struct {
 // instead of N fragments (one per reconnect) as it was before.
 func newSessionUUID() string {
 	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := cryptorand.Read(b); err != nil {
 		return fmt.Sprintf("fallback-%d", time.Now().UnixNano())
 	}
 	b[6] = (b[6] & 0x0f) | 0x40 // UUID v4
@@ -54,18 +55,30 @@ var wsDialer = &websocket.Dialer{
 // TCP connections (GC-7).
 const wsReadDeadline = 60 * time.Second
 
+const (
+	reconnectBackoffInit = 1 * time.Second
+	reconnectBackoffMax  = 60 * time.Second
+)
+
 var vpsRelay *VPSRelay
 
-// InitVPSRelay creates and starts the VPS relay connection
+// InitVPSRelay creates and starts the VPS relay connection.
+// The WebSocket URL defaults to wss://albionaitool.xyz but can be overridden
+// via the VPSRelayURL config key or --vps-url flag (GO-L1).
 func InitVPSRelay(captureToken string) {
 	if captureToken == "" {
 		log.Info("[VPSRelay] No capture token configured — chest captures will only be logged locally")
 		return
 	}
 
+	url := ConfigGlobal.VPSRelayURL
+	if url == "" {
+		url = "wss://albionaitool.xyz"
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	vpsRelay = &VPSRelay{
-		url:       "wss://albionaitool.xyz",
+		url:       url,
 		token:     captureToken,
 		sessionID: newSessionUUID(),
 		stopCh:    make(chan struct{}),
@@ -77,16 +90,40 @@ func InitVPSRelay(captureToken string) {
 	log.Infof("[VPSRelay] Initialized — will relay chest captures to %s (sessionID=%s)", vpsRelay.url, vpsRelay.sessionID)
 }
 
+// connectLoop retries connect() with exponential backoff + jitter (GO-H2).
+// Backoff resets when a connection succeeds (was held long enough for auth to complete).
 func (r *VPSRelay) connectLoop() {
+	backoff := reconnectBackoffInit
 	for {
-		r.connect()
-		r.flushPending()
+		wasConnected := r.connect()
+		if wasConnected {
+			backoff = reconnectBackoffInit // reset after a successful session
+		}
+
+		delay := jitter(backoff)
 		select {
 		case <-r.stopCh:
 			return
-		case <-time.After(10 * time.Second):
+		case <-time.After(delay):
+		}
+
+		if !wasConnected {
+			backoff = min(backoff*2, reconnectBackoffMax)
 		}
 	}
+}
+
+// jitter adds up to 20 % random noise to d to spread out reconnect storms.
+func jitter(d time.Duration) time.Duration {
+	noise := time.Duration(rand.Int63n(int64(d) / 5))
+	return d + noise
+}
+
+func min(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // StopVPSRelay gracefully shuts down the VPS relay connection.
@@ -177,7 +214,10 @@ func (r *VPSRelay) flushPending() {
 	}
 }
 
-func (r *VPSRelay) connect() {
+// connect dials the VPS, authenticates, flushes pending messages, then reads
+// until the connection drops. Returns true if authentication succeeded (even
+// if the connection later dropped), false on dial/auth failure.
+func (r *VPSRelay) connect() (wasConnected bool) {
 	r.mu.Lock()
 	if r.conn != nil {
 		r.conn.Close()
@@ -192,19 +232,19 @@ func (r *VPSRelay) connect() {
 	conn, _, err := wsDialer.Dial(r.url, nil)
 	if err != nil {
 		log.Debugf("[VPSRelay] Connection failed: %v", err)
-		return
+		return false
 	}
 
-	// GC-3: close the connection when the relay is stopped so that any
-	// goroutine blocked on ReadMessage returns immediately.
+	// GO-C2: close the connection when the relay context is cancelled so any
+	// goroutine blocked on ReadMessage returns promptly without leaking.
 	stopConn := make(chan struct{})
-	go func() {
+	go func(ctx context.Context) {
 		select {
-		case <-r.ctx.Done():
+		case <-ctx.Done():
 			conn.Close()
 		case <-stopConn:
 		}
-	}()
+	}(r.ctx)
 	defer close(stopConn)
 
 	r.mu.Lock()
@@ -215,23 +255,32 @@ func (r *VPSRelay) connect() {
 	// The sessionID is generated once at process start (InitVPSRelay) and re-sent on every
 	// reconnect; the backend pins ws.lootSessionId to this value so loot events across
 	// reconnects land in the SAME session instead of fragmenting into one session per reconnect.
+	// GO-C3: check json.Marshal error (authMsg only contains static strings so
+	// this never fails in practice, but we must not silently swallow it).
 	authMsg := map[string]interface{}{
 		"type":      "client-auth",
 		"token":     r.token,
 		"sessionID": r.sessionID,
 	}
-	authJSON, _ := json.Marshal(authMsg)
+	authJSON, err := json.Marshal(authMsg)
+	if err != nil {
+		log.Errorf("[VPSRelay] Failed to marshal auth message: %v", err)
+		conn.Close()
+		return false
+	}
 	if err := conn.WriteMessage(websocket.TextMessage, authJSON); err != nil {
 		log.Debugf("[VPSRelay] Auth send failed: %v", err)
-		return
+		return false
 	}
 
 	// Read messages until we get the auth response.
 	// (server broadcasts NATS market data to all WS clients, so first messages may not be auth)
+	// GO-C2: the goroutine receives ctx explicitly; cancellation closes conn, which
+	// causes ReadMessage to return an error and unblocks the goroutine.
 	authTimeout := time.After(30 * time.Second)
 	authDone := make(chan bool, 1)
 
-	go func() {
+	go func(ctx context.Context) {
 		for {
 			_ = conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
 			_, msg, err := conn.ReadMessage()
@@ -261,19 +310,23 @@ func (r *VPSRelay) connect() {
 			}
 			// Ignore other messages during auth handshake
 		}
-	}()
+	}(r.ctx)
 
 	select {
 	case success := <-authDone:
 		if !success {
 			conn.Close()
-			return
+			return false
 		}
 	case <-authTimeout:
 		log.Warn("[VPSRelay] Auth timed out after 30s")
 		conn.Close()
-		return
+		return false
 	}
+
+	// GO-H1: flush any messages queued during the reconnect window, now that
+	// the connection is live. Do this before entering the keep-alive loop.
+	r.flushPending()
 
 	// Keep connection alive — read and discard server messages.
 	// GC-7: reset read deadline after every successful message.
@@ -286,7 +339,7 @@ func (r *VPSRelay) connect() {
 			r.connected = false
 			r.conn = nil
 			r.mu.Unlock()
-			return
+			return true // was connected
 		}
 	}
 }
@@ -314,6 +367,7 @@ func SendLootEvent(lootEvent *LootEvent) {
 	msg := map[string]interface{}{"type": "loot-event", "data": lootEvent}
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
+		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
 	}
 	if vpsRelay.sendOrQueue(msgJSON) {
@@ -328,6 +382,7 @@ func SendDeathEvent(deathEvent *DeathEvent) {
 	msg := map[string]interface{}{"type": "death-event", "data": deathEvent}
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
+		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
 	}
 	if vpsRelay.sendOrQueue(msgJSON) {
@@ -353,10 +408,10 @@ type TradeEvent struct {
 	Timestamp int64  `json:"timestamp"`
 	ItemID    string `json:"itemId"`
 	Amount    int    `json:"amount"`
-	Price     int    `json:"unitPrice"`  // silver per unit
-	Total     int    `json:"total"`      // total silver
+	Price     int    `json:"unitPrice"` // silver per unit
+	Total     int    `json:"total"`     // total silver
 	Location  string `json:"location"`
-	TradeType string `json:"tradeType"`  // "insta-buy", "listing-created", "buy-order-placed"
+	TradeType string `json:"tradeType"` // "insta-buy", "listing-created", "buy-order-placed"
 	Quality   int    `json:"quality"`
 	OrderID   int64  `json:"orderId,omitempty"`
 }
@@ -368,6 +423,7 @@ func SendTradeEvent(trade *TradeEvent) {
 	msg := map[string]interface{}{"type": "trade-event", "data": trade}
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
+		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
 	}
 	if vpsRelay.sendOrQueue(msgJSON) {
@@ -382,6 +438,7 @@ func SendSaleNotification(sale *SaleNotification) {
 	msg := map[string]interface{}{"type": "sale-notification", "data": sale}
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
+		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
 	}
 	if vpsRelay.sendOrQueue(msgJSON) {
