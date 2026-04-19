@@ -71,6 +71,7 @@ type config struct {
 	UpdateGithubRepo               string
 	CaptureToken                   string // Token for authenticating with the private VPS relay
 	CaptureEnabled                 bool   // When false, chest captures are ignored (toggled via config or CLI)
+	VPSRelayURL                    string // WebSocket URL for the VPS relay (default: wss://albionaitool.xyz)
 	ConfigDir                      string // Directory to search for config.yaml (--config-dir flag)
 	LogUnknownEvents               bool   // When true, writes unrecognised opcodes to logs/unknown-events-<ts>.log for reverse-engineering
 }
@@ -169,6 +170,11 @@ func (config *config) setupWebsocketFlags() {
 	// Load unknown-events logger setting (defaults to false)
 	if viper.IsSet("LogUnknownEvents") {
 		config.LogUnknownEvents = viper.GetBool("LogUnknownEvents")
+	}
+
+	// Allow config.yaml to override the VPS relay URL (GO-L1)
+	if viper.IsSet("VPSRelayURL") && config.VPSRelayURL == "" {
+		config.VPSRelayURL = viper.GetString("VPSRelayURL")
 	}
 
 	// Allow config.yaml to override the update owner/repo (useful for dev/testing).
@@ -308,6 +314,13 @@ func (config *config) setupCommonFlags() {
 		"capture",
 		true,
 		"Enable chest capture mode. Set to false to disable chest/tab scanning.",
+	)
+
+	flag.StringVar(
+		&config.VPSRelayURL,
+		"vps-url",
+		"",
+		"WebSocket URL for the VPS relay. Overrides the VPSRelayURL config.yaml setting.",
 	)
 
 	flag.StringVar(
