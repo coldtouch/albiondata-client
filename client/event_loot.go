@@ -252,7 +252,7 @@ func (w *lootFileWriter) append(ev *LootEvent) {
 
 	ts := time.UnixMilli(ev.Timestamp).UTC().Format(time.RFC3339)
 	// item_name: we only have the string ID (e.g. T4_BAG), not a localised display name
-	fmt.Fprintf(w.file, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
+	if _, err := fmt.Fprintf(w.file, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
 		ts,
 		ev.LootedBy.Alliance,
 		ev.LootedBy.Guild,
@@ -263,8 +263,13 @@ func (w *lootFileWriter) append(ev *LootEvent) {
 		ev.LootedFrom.Alliance,
 		ev.LootedFrom.Guild,
 		ev.LootedFrom.Name,
-	)
-	_ = w.file.Sync()
+	); err != nil {
+		log.Errorf("[LootLog] Write failed: %v", err)
+		return
+	}
+	if err := w.file.Sync(); err != nil {
+		log.Errorf("[LootLog] Sync failed: %v", err)
+	}
 }
 
 // appendDeath writes a single death event to the loot log file using the
