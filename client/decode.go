@@ -224,6 +224,15 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		dumpParams("RESPONSE trade opcode", code, params)
 		return nil, nil
 
+	// Chest log diagnostics — user opens the in-game log tab on a chest → dump raw params
+	// so we can reverse-engineer the authoritative chest log for cross-checking our loot capture.
+	// Feature gated behind LogUnknownEvents so it doesn't pollute regular logs.
+	case opGetChestLogs, opGetAccessRightLogs, opGetGuildAccountLogs, opGetGuildAccountLogsLargeAmount:
+		if ConfigGlobal.LogUnknownEvents {
+			dumpParams("RESPONSE chest/guild log opcode", code, params)
+		}
+		return nil, nil
+
 	default:
 		// Try shifted code (-6) for operations that moved in the April 2026 update
 		switch OperationType(shifted) {
@@ -250,6 +259,12 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 			operation = &operationGetClusterMapInfoResponse{}
 		case opGoldMarketGetAverageInfo:
 			operation = &operationGoldMarketGetAverageInfoResponse{}
+		case opGetChestLogs, opGetAccessRightLogs, opGetGuildAccountLogs, opGetGuildAccountLogsLargeAmount:
+			// Shifted chest/guild log opcodes (April 2026 update +6). Dump raw for reverse-engineering.
+			if ConfigGlobal.LogUnknownEvents {
+				dumpParams("RESPONSE chest/guild log opcode (shifted)", code, params)
+			}
+			return nil, nil
 		default:
 			// Neither the raw nor shifted opcode matched.
 			recordUnknownEvent("RESPONSE", rawCode, params)
