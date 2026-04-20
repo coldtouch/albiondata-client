@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/ao-data/albiondata-client/log"
 )
@@ -31,6 +32,43 @@ var specialItemNames = map[int]string{
 // All negative numeric IDs are internal system items (silver, gold, fame, tokens, essences, etc.)
 func IsSpecialItem(numericID int) bool {
 	return numericID < 0
+}
+
+// IsNonTradeableItem returns true for account-bound cosmetic/unlock items that the game
+// sometimes surfaces in a chest tab's slot map (even though they aren't physically in the
+// chest). These have no market value, so we filter them out of Loot Buyer captures.
+//
+// Patterns (all confirmed non-tradeable via ao-bin-dumps):
+//   UNIQUE_UNLOCK_*  — one-time skin unlock tokens (mount skins, character avatars, etc.)
+//   SKIN_*           — cosmetic mount/character skin variants
+//   *_TELLAFRIEND    — recruiter rewards (account-bound by design)
+//   UNIQUE_AVATAR*   — character portrait avatars
+//   UNIQUE_AVATARRING* — character portrait rings
+//   UNIQUE_HIDEOUT*  — hideout-bound infrastructure tokens
+//   UNKNOWN_*        — IDs our itemmap couldn't resolve (no market data possible)
+func IsNonTradeableItem(itemName string) bool {
+	if itemName == "" {
+		return false
+	}
+	if strings.HasPrefix(itemName, "UNIQUE_UNLOCK_") {
+		return true
+	}
+	if strings.HasPrefix(itemName, "SKIN_") {
+		return true
+	}
+	if strings.HasPrefix(itemName, "UNIQUE_AVATAR") {
+		return true
+	}
+	if strings.HasPrefix(itemName, "UNIQUE_HIDEOUT") {
+		return true
+	}
+	if strings.HasPrefix(itemName, "UNKNOWN_") {
+		return true
+	}
+	if strings.Contains(itemName, "_TELLAFRIEND") {
+		return true
+	}
+	return false
 }
 
 func init() {

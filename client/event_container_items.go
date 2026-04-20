@@ -291,6 +291,7 @@ type ContainerCapture struct {
 func BuildCaptureFromSlots(slotIDs []int, containerGUID string, tabName string, tabIndex int) {
 	var items []CapturedItem
 	var missing int
+	var filtered int
 
 	for _, slotID := range slotIDs {
 		if slotID == 0 {
@@ -300,6 +301,13 @@ func BuildCaptureFromSlots(slotIDs []int, containerGUID string, tabName string, 
 			item := val.(cachedItemEntry).item
 			if IsSpecialItem(item.NumericID) {
 				log.Debugf("[ContainerCapture] Skipping special item at slot %d: %s (id=%d)", slotID, item.ItemID, item.NumericID)
+				continue
+			}
+			if IsNonTradeableItem(item.ItemID) {
+				// Filter out account-bound cosmetics (mount skins, unlock tokens, TELLAFRIEND rewards, etc.)
+				// The game sometimes leaks these into chest slot maps even when they aren't in the tab.
+				log.Infof("[ContainerCapture] Filtered non-tradeable item at slot %d: %s (id=%d) — account-bound cosmetic", slotID, item.ItemID, item.NumericID)
+				filtered++
 				continue
 			}
 			items = append(items, item)
@@ -348,11 +356,12 @@ func BuildCaptureFromSlots(slotIDs []int, containerGUID string, tabName string, 
 		TotalWeight: totalWeight,
 	}
 
-	log.Infof("[ContainerCapture] Captured %d items (%d equipment, %d stackable, %d missing from cache) — total weight: %.1f kg",
+	log.Infof("[ContainerCapture] Captured %d items (%d equipment, %d stackable, %d missing from cache, %d filtered as non-tradeable) — total weight: %.1f kg",
 		len(items),
 		countEquipment(items),
 		len(items)-countEquipment(items),
 		missing,
+		filtered,
 		totalWeight)
 
 	// Log first 10 items as summary
