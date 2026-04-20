@@ -24,7 +24,10 @@ jobs:
         id: notes
         shell: bash
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || echo "")
+          # Disable pipefail so `git log | head` doesn't explode when head closes the pipe early (exit 141).
+          set +o pipefail
+          # --match 'v*' so we only pick versioned tags (ignore the old upstream '0.0.11' etc).
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_REF_NAME}^" 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
             echo "Prior tag: $PREV_TAG" >&2
             LOG=$(git log --pretty='- %s (%h)' "${PREV_TAG}..${GITHUB_REF_NAME}" | head -40)
