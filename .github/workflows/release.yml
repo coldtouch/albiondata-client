@@ -1,95 +1,104 @@
 name: Build and Release
 
+# Triggers on tag push (v*) — same trigger as tag-release.yml. The two run in parallel,
+# tag-release creates the Release record with auto-generated notes, and this workflow
+# uploads the binary assets to the same Release (softprops/action-gh-release appends
+# to an existing release when tag_name matches).
+#
+# Also runs on workflow_dispatch so we can re-build a release manually if needed.
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build assets for (e.g. v0.7.3)'
+        required: true
 
 jobs:
   build-windows:
     name: Build Windows Client
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.24"
 
-      - name: Install NSIS
-        run: sudo apt-get update && sudo apt-get -y install nsis
+      - name: Install NSIS + libpcap
+        run: sudo apt-get update && sudo apt-get -y install nsis libpcap-dev
 
       - name: Build
         run: make build-windows
 
-      - name: Upload Windows Installer
-        uses: shogo82148/actions-upload-release-asset@v1
+      - name: Upload Windows assets to release
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: albiondata-client-amd64-installer.exe
-
-      - name: Upload Windows Update Archive
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: update-windows-amd64.exe.gz
-
-      - name: Upload itemmap.json
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: itemmap.json
-          overwrite: true
-
-      - name: Upload weightmap.json
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: weightmap.json
-          overwrite: true
-
-      - name: Upload config.yaml template
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: config.yaml.example
-          overwrite: true
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            albiondata-client-amd64-installer.exe
+            update-windows-amd64.exe.gz
+            itemmap.json
+            weightmap.json
+            config.yaml.example
 
   build-linux:
     name: Build Linux Client
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.24"
+
+      - name: Install libpcap
+        run: sudo apt-get update && sudo apt-get -y install libpcap-dev
 
       - name: Build
         run: make build-linux
 
-      - name: Upload Linux Update Archive
-        uses: shogo82148/actions-upload-release-asset@v1
+      - name: Upload Linux asset to release
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: update-linux-amd64.gz
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: update-linux-amd64.gz
 
   build-darwin:
     name: Build macOS Client
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.24"
 
+      - name: Install libpcap
+        run: brew install libpcap || true
+
       - name: Build
         run: |
+          TAG_REF="${{ github.event.inputs.tag || github.ref_name }}"
           CGO_ENABLED=1 GOARCH=amd64 CC="clang -arch x86_64" CGO_LDFLAGS="-arch x86_64" \
-            go build -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" albiondata-client.go
+            go build -ldflags "-s -w -X main.version=$TAG_REF" albiondata-client.go
 
       - name: Package
         run: |
@@ -105,14 +114,10 @@ jobs:
           chmod 777 ./scripts/$TEMP/*
           cd scripts && zip -r ../$ZIPNAME ./"$TEMP"
 
-      - name: Upload macOS Update Archive
-        uses: shogo82148/actions-upload-release-asset@v1
+      - name: Upload macOS assets to release
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: update-darwin-amd64.gz
-
-      - name: Upload macOS Zip
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: albiondata-client-amd64-mac.zip
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            update-darwin-amd64.gz
+            albiondata-client-amd64-mac.zip
