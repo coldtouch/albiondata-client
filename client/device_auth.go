@@ -128,7 +128,7 @@ func EnsureCaptureToken() string {
 
 	// No token found — run device auth
 	log.Info("[Auth] No capture token found — starting device authorization...")
-	fmt.Println("\nNo capture token found. Let's link this client to your account.\n")
+	fmt.Println("\nNo capture token found. Let's link this client to your account.")
 
 	newToken, err := RunDeviceAuth()
 	if err != nil {

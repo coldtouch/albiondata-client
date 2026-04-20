@@ -68,18 +68,21 @@ func physicalAddrToString(physAddr [8]byte) string {
 	return string(buf)
 }
 
-func cStringToString(cs *uint16) (s string) {
-	if cs != nil {
-		us := make([]uint16, 0, 256)
-		for p := uintptr(unsafe.Pointer(cs)); ; p += 2 {
-			u := *(*uint16)(unsafe.Pointer(p))
-			if u == 0 {
-				return string(utf16.Decode(us))
-			}
-			us = append(us, u)
-		}
+func cStringToString(cs *uint16) string {
+	if cs == nil {
+		return ""
 	}
-	return ""
+	// Walk the null-terminated UTF-16 string via unsafe.Add, which go vet accepts
+	// (unlike the raw uintptr + unsafe.Pointer round-trip it flags as unsafeptr).
+	n := 0
+	for p := cs; *p != 0; p = (*uint16)(unsafe.Add(unsafe.Pointer(p), 2)) {
+		n++
+	}
+	if n == 0 {
+		return ""
+	}
+	us := unsafe.Slice(cs, n)
+	return string(utf16.Decode(us))
 }
 
 // Gets all physical interfaces based on filter results, ignoring all VM, Loopback and Tunnel interfaces.

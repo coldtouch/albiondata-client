@@ -27,6 +27,14 @@ jobs:
           go-version: "1.24"
           cache: true
 
+      - name: Install libpcap (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get -y install libpcap-dev
+
+      - name: Install libpcap (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libpcap || true
+
       - name: Go mod tidy (verify)
         run: go mod tidy && git diff --exit-code go.mod go.sum
 
