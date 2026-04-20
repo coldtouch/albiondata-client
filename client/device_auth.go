@@ -153,7 +153,72 @@ func EnsureCaptureToken() string {
 	return newToken
 }
 
+// writeConfigFile merges the new CaptureToken into any existing config.yaml
+// rather than overwriting it. Preserves user-set keys like LogUnknownEvents,
+// VPSRelayURL, CaptureEnabled, etc. — previously this function truncated the
+// file to just the token line, silently wiping discovery flags mid-session.
 func writeConfigFile(path string, token string) error {
-	content := fmt.Sprintf("# Coldtouch Market Analyzer - Custom Data Client Config\nCaptureToken: \"%s\"\n", token)
+	existing, _ := os.ReadFile(path)
+	lines := []string{}
+	if len(existing) > 0 {
+		for _, line := range splitLines(string(existing)) {
+			trimmed := trimSpace(line)
+			// Skip any prior CaptureToken line — we'll rewrite it below.
+			if startsWith(trimmed, "CaptureToken:") || startsWith(trimmed, "CaptureToken ") {
+				continue
+			}
+			lines = append(lines, line)
+		}
+	} else {
+		lines = append(lines, "# Coldtouch Market Analyzer - Custom Data Client Config")
+	}
+	lines = append(lines, fmt.Sprintf("CaptureToken: \"%s\"", token))
+	content := ""
+	for i, l := range lines {
+		if i > 0 {
+			content += "\n"
+		}
+		content += l
+	}
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		content += "\n"
+	}
 	return os.WriteFile(path, []byte(content), 0600)
+}
+
+// Tiny helpers (avoid strings package import churn — they're used only here).
+func splitLines(s string) []string {
+	var out []string
+	cur := ""
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			out = append(out, cur)
+			cur = ""
+			continue
+		}
+		if s[i] == '\r' {
+			continue
+		}
+		cur += string(s[i])
+	}
+	if cur != "" {
+		out = append(out, cur)
+	}
+	return out
+}
+func trimSpace(s string) string {
+	start, end := 0, len(s)
+	for start < end && (s[start] == ' ' || s[start] == '\t') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
+		end--
+	}
+	return s[start:end]
+}
+func startsWith(s, p string) bool {
+	if len(s) < len(p) {
+		return false
+	}
+	return s[:len(p)] == p
 }

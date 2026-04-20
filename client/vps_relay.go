@@ -375,6 +375,33 @@ func SendLootEvent(lootEvent *LootEvent) {
 	}
 }
 
+// ChestLogBatch is one page of decoded chest log entries (one response from
+// opcode 157). Sent to the VPS so the website can display per-player deposit
+// ground truth alongside the existing pickup-based accountability flow.
+type ChestLogBatch struct {
+	CapturedAt  int64           `json:"capturedAt"`  // Unix millis — when our client received the response
+	Action      string          `json:"action"`      // "deposit" | "withdraw" | "unpaired" | "filter_unknown"
+	FilterValue int             `json:"filterValue"` // raw REQUEST param 6 (1 or 28), kept for debugging
+	Entries     []ChestLogEntry `json:"entries"`
+}
+
+// SendChestLogBatch streams one chest-log response's entries to the VPS.
+// Queued on disconnect like the other relay messages.
+func SendChestLogBatch(batch *ChestLogBatch) {
+	if vpsRelay == nil {
+		return
+	}
+	msg := map[string]interface{}{"type": "chest-log-batch", "data": batch}
+	msgJSON, err := json.Marshal(msg)
+	if err != nil {
+		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
+		return
+	}
+	if vpsRelay.sendOrQueue(msgJSON) {
+		log.Infof("[VPSRelay] Sent chest-log batch: action=%s entries=%d", batch.Action, len(batch.Entries))
+	}
+}
+
 func SendDeathEvent(deathEvent *DeathEvent) {
 	if vpsRelay == nil {
 		return

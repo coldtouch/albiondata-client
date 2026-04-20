@@ -151,6 +151,14 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		dumpParams("REQUEST QuickSellAction", code, params)
 		return nil, nil
 
+	// Chest-log REQUEST — pair with the response so we can tag each row as
+	// deposit or withdraw. Response body doesn't carry direction; the game
+	// sends two separate requests per viewing (param 6 differs). We stash
+	// (opID → filterValue) keyed by the Photon invocation counter (255).
+	case opGetChestLogs:
+		captureChestLogRequestParams(params)
+		return nil, nil
+
 	default:
 		// Try shifted code (-6) for operations that moved in the April 2026 update
 		switch OperationType(shifted) {
@@ -168,6 +176,10 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 			operation = &operationAuctionCreateOfferRequest{}
 		case opAuctionCreateRequest:
 			operation = &operationAuctionCreateRequestReq{}
+		case opGetChestLogs:
+			// Shifted opcode 157 — the actual one seen in the April 2026 build.
+			captureChestLogRequestParams(params)
+			return nil, nil
 		default:
 			// Neither the raw nor shifted opcode matched — record for reverse-engineering.
 			recordUnknownEvent("REQUEST", rawCode, params)
@@ -228,12 +240,15 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		dumpParams("RESPONSE trade opcode", code, params)
 		return nil, nil
 
-	// Chest log diagnostics — user opens the in-game log tab on a chest → dump raw params
-	// so we can reverse-engineer the authoritative chest log for cross-checking our loot capture.
-	// Feature gated behind LogUnknownEvents so it doesn't pollute regular logs.
-	case opGetChestLogs, opGetAccessRightLogs, opGetGuildAccountLogs, opGetGuildAccountLogsLargeAmount:
+	// Chest log response — parallel-array layout discovered 2026-04-20.
+	// Each log row is (player, itemID, quality, qty, ticks, extra). Decoded in
+	// operation_get_chest_logs.go; entries append to logs/chest-logs-*.tsv.
+	// Other guild-log opcodes keep the raw dump since their layout isn't confirmed.
+	case opGetChestLogs:
+		operation = &operationGetChestLogsResponse{}
+	case opGetAccessRightLogs, opGetGuildAccountLogs, opGetGuildAccountLogsLargeAmount:
 		if ConfigGlobal.LogUnknownEvents {
-			dumpParams("RESPONSE chest/guild log opcode", code, params)
+			dumpParams("RESPONSE guild log opcode", code, params)
 		}
 		return nil, nil
 
@@ -263,10 +278,12 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 			operation = &operationGetClusterMapInfoResponse{}
 		case opGoldMarketGetAverageInfo:
 			operation = &operationGoldMarketGetAverageInfoResponse{}
-		case opGetChestLogs, opGetAccessRightLogs, opGetGuildAccountLogs, opGetGuildAccountLogsLargeAmount:
-			// Shifted chest/guild log opcodes (April 2026 update +6). Dump raw for reverse-engineering.
+		case opGetChestLogs:
+			// Shifted opcode 157 (151+6) — the actual one seen in the April 2026 game build.
+			operation = &operationGetChestLogsResponse{}
+		case opGetAccessRightLogs, opGetGuildAccountLogs, opGetGuildAccountLogsLargeAmount:
 			if ConfigGlobal.LogUnknownEvents {
-				dumpParams("RESPONSE chest/guild log opcode (shifted)", code, params)
+				dumpParams("RESPONSE guild log opcode (shifted)", code, params)
 			}
 			return nil, nil
 		default:

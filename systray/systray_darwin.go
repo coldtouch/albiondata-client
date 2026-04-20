@@ -32,6 +32,8 @@ func Run() {
 
 func onExit() {
 	client.CloseLootFile()
+	client.CloseChestLogFile()
+	client.CloseUnknownLogger()
 }
 
 func onReady() {

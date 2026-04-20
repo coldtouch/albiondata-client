@@ -54,6 +54,7 @@ func main() {
 		log.Info("Shutting down...")
 		client.StopVPSRelay() // close WS connection and drain the send goroutine
 		client.CloseLootFile()
+		client.CloseChestLogFile()
 		client.CloseUnknownLogger()
 		os.Exit(0)
 	}()
