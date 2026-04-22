@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ao-data/albiondata-client/log"
@@ -159,66 +160,24 @@ func EnsureCaptureToken() string {
 // file to just the token line, silently wiping discovery flags mid-session.
 func writeConfigFile(path string, token string) error {
 	existing, _ := os.ReadFile(path)
-	lines := []string{}
+	var lines []string
 	if len(existing) > 0 {
-		for _, line := range splitLines(string(existing)) {
-			trimmed := trimSpace(line)
+		for _, line := range strings.Split(strings.ReplaceAll(string(existing), "\r\n", "\n"), "\n") {
+			trimmed := strings.TrimSpace(line)
 			// Skip any prior CaptureToken line — we'll rewrite it below.
-			if startsWith(trimmed, "CaptureToken:") || startsWith(trimmed, "CaptureToken ") {
+			if strings.HasPrefix(trimmed, "CaptureToken:") || strings.HasPrefix(trimmed, "CaptureToken ") {
 				continue
 			}
 			lines = append(lines, line)
+		}
+		// Remove trailing empty lines left by the filter above
+		for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+			lines = lines[:len(lines)-1]
 		}
 	} else {
 		lines = append(lines, "# Coldtouch Market Analyzer - Custom Data Client Config")
 	}
 	lines = append(lines, fmt.Sprintf("CaptureToken: \"%s\"", token))
-	content := ""
-	for i, l := range lines {
-		if i > 0 {
-			content += "\n"
-		}
-		content += l
-	}
-	if len(content) > 0 && content[len(content)-1] != '\n' {
-		content += "\n"
-	}
+	content := strings.Join(lines, "\n") + "\n"
 	return os.WriteFile(path, []byte(content), 0600)
-}
-
-// Tiny helpers (avoid strings package import churn — they're used only here).
-func splitLines(s string) []string {
-	var out []string
-	cur := ""
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			out = append(out, cur)
-			cur = ""
-			continue
-		}
-		if s[i] == '\r' {
-			continue
-		}
-		cur += string(s[i])
-	}
-	if cur != "" {
-		out = append(out, cur)
-	}
-	return out
-}
-func trimSpace(s string) string {
-	start, end := 0, len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
-		end--
-	}
-	return s[start:end]
-}
-func startsWith(s, p string) bool {
-	if len(s) < len(p) {
-		return false
-	}
-	return s[:len(p)] == p
 }

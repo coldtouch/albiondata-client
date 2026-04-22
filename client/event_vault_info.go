@@ -99,6 +99,7 @@ func parseVaultInfo(params map[string]interface{}, isGuild bool) *VaultInfo {
 	var names []string
 	if v, ok := params["3"]; ok {
 		if arr, ok := v.([]interface{}); ok {
+			names = make([]string, 0, len(arr))
 			for _, item := range arr {
 				if s, ok := item.(string); ok {
 					names = append(names, s)
@@ -115,6 +116,7 @@ func parseVaultInfo(params map[string]interface{}, isGuild bool) *VaultInfo {
 	var icons []string
 	if v, ok := params["4"]; ok {
 		if arr, ok := v.([]interface{}); ok {
+			icons = make([]string, 0, len(arr))
 			for _, item := range arr {
 				if s, ok := item.(string); ok {
 					icons = append(icons, s)
@@ -123,11 +125,13 @@ func parseVaultInfo(params map[string]interface{}, isGuild bool) *VaultInfo {
 		}
 	}
 
-	// Build tabs
+	// Build tabs — preallocate to the final length to avoid repeated grows
+	// when guilds have 30+ vault tabs.
 	maxLen := len(guids)
 	if len(names) > maxLen {
 		maxLen = len(names)
 	}
+	vi.Tabs = make([]VaultTab, 0, maxLen)
 	for i := 0; i < maxLen; i++ {
 		tab := VaultTab{}
 		if i < len(guids) {
@@ -152,6 +156,7 @@ func extractGUIDArray(v interface{}) []string {
 	var guids []string
 	switch arr := v.(type) {
 	case []interface{}:
+		guids = make([]string, 0, len(arr))
 		for _, item := range arr {
 			guid := extractSingleGUID(item)
 			if guid != "" {
@@ -159,6 +164,7 @@ func extractGUIDArray(v interface{}) []string {
 			}
 		}
 	case [][]int8:
+		guids = make([]string, 0, len(arr))
 		for _, byteArr := range arr {
 			b := make([]byte, len(byteArr))
 			for i, v := range byteArr {
@@ -169,6 +175,7 @@ func extractGUIDArray(v interface{}) []string {
 	case []int8:
 		// V18: flat byte array — split into 16-byte GUIDs
 		if len(arr) >= 16 {
+			guids = make([]string, 0, len(arr)/16)
 			for i := 0; i+16 <= len(arr); i += 16 {
 				b := make([]byte, 16)
 				for j := 0; j < 16; j++ {

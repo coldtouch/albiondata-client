@@ -1,10 +1,12 @@
 package client
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ao-data/albiondata-client/log"
@@ -31,8 +33,31 @@ var objectIDToName sync.Map // map[int64]string — populated by eventNewCharact
 
 const playerCacheTTL = 30 * time.Minute
 
+// Loot event activity counters — incremented lock-free by eventOtherGrabbedLoot
+// and summarised once per 30s by lootSummaryLoop. Replaces the per-event
+// log.Infof that spammed journald 100+ lines/sec during ZvZ.
+var lootEventCount atomic.Uint64
+var deathEventCount atomic.Uint64
+
 func init() {
 	go playerCacheCleanup()
+	go lootSummaryLoop()
+}
+
+// lootSummaryLoop emits one aggregated Info log every 30 seconds summarising
+// how many loot/death events were captured. Individual events are still logged
+// at Debug level for detailed troubleshooting.
+func lootSummaryLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		l := lootEventCount.Swap(0)
+		d := deathEventCount.Swap(0)
+		if l == 0 && d == 0 {
+			continue
+		}
+		log.Infof("[Loot] Captured %d loot event(s) and %d death(s) in the last 30s", l, d)
+	}
 }
 
 // playerNameByObjectID returns the cached character name for an objectID, or ""
@@ -174,10 +199,14 @@ func (ev eventOtherGrabbedLoot) Process(state *albionState) {
 		Weight:     resolveItemWeight(int(ev.ItemNumID)),
 	}
 
-	log.Infof("[Loot] %s [%s] picked up %s x%d from %s [%s]",
+	// Per-event logging at Debug level only — under ZvZ this fires 100+ times/s
+	// and log.Infof to journald is synchronous, which stalls the event goroutine.
+	// The 30s summary in lootSummaryLoop covers operational visibility.
+	log.Debugf("[Loot] %s [%s] picked up %s x%d from %s [%s]",
 		lootedBy.Name, lootedBy.Guild,
 		itemName, qty,
 		lootedFrom.Name, lootedFrom.Guild)
+	lootEventCount.Add(1)
 
 	// Write to local log file and send to VPS
 	lootWriter.append(lootEvent)
@@ -190,14 +219,37 @@ func (ev eventOtherGrabbedLoot) Process(state *albionState) {
 //
 // Format: timestamp_utc;looted_by__alliance;looted_by__guild;looted_by__name;item_id;item_name;quantity;looted_from__alliance;looted_from__guild;looted_from__name
 
+// lootFileWriter uses a bufio.Writer over the underlying *os.File so each loot
+// event hits an in-process buffer (no syscall), is flushed to the kernel every
+// 5s by flushLoop, and is fsynced on shutdown via CloseLootFile.
+//
+// Durability vs. the old "Sync() after every event" behaviour:
+//   - Every event is immediately relayed to the VPS (vps_relay.go) — that's the
+//     source of truth for the website's Loot Logger.
+//   - The local .txt is the secondary copy. On a process crash, up to ~5s of
+//     buffered bytes may not be on disk yet, but normal shutdown (systray exit,
+//     Ctrl+C) drains them via CloseLootFile.
+//
+// This removes the per-event fsync hot-path that bottlenecked ZvZ sessions
+// (50+ loots/sec → 50+ fsync syscalls/sec).
 type lootFileWriter struct {
 	mu       sync.Mutex
 	file     *os.File
+	buf      *bufio.Writer
 	filePath string
 	ready    bool
+	stopCh   chan struct{}
 }
 
 var lootWriter = &lootFileWriter{}
+
+// flushLoopStarted guards the background flushLoop so we only launch it once
+// across ensureInit calls (the first event per session triggers it).
+var flushLoopStarted atomic.Bool
+
+// Sized to hold ~60–120 typical loot rows without a kernel write. bufio.Writer
+// auto-flushes on full, so this is a soft cap — no events are dropped.
+const lootWriteBufSize = 32 * 1024
 
 // ensureInit opens (or creates) the loot log file. Must be called with mu held.
 func (w *lootFileWriter) ensureInit() error {
@@ -226,18 +278,52 @@ func (w *lootFileWriter) ensureInit() error {
 		return fmt.Errorf("failed to create loot log %s: %w", w.filePath, err)
 	}
 
+	buf := bufio.NewWriterSize(f, lootWriteBufSize)
+
 	// Write the header line
-	_, err = fmt.Fprintln(f, "timestamp_utc;looted_by__alliance;looted_by__guild;looted_by__name;item_id;item_name;quantity;looted_from__alliance;looted_from__guild;looted_from__name")
+	_, err = fmt.Fprintln(buf, "timestamp_utc;looted_by__alliance;looted_by__guild;looted_by__name;item_id;item_name;quantity;looted_from__alliance;looted_from__guild;looted_from__name")
 	if err != nil {
 		f.Close()
 		return fmt.Errorf("failed to write loot log header: %w", err)
 	}
+	// Flush header to kernel + fsync so the file isn't empty if the process dies
+	// before the first loot event.
+	if err := buf.Flush(); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to flush loot log header: %w", err)
+	}
 	_ = f.Sync()
 
 	w.file = f
+	w.buf = buf
+	w.stopCh = make(chan struct{})
 	w.ready = true
+
+	// Launch the background flusher on first init for this process. Survives
+	// file rotation — ensureInit swaps the underlying file/buf but the loop
+	// keeps pulling the current lootWriter state.
+	if flushLoopStarted.CompareAndSwap(false, true) {
+		go lootFlushLoop()
+	}
+
 	log.Infof("[LootLog] Writing loot events to %s", w.filePath)
 	return nil
+}
+
+// lootFlushLoop pushes the bufio buffer to the kernel every 5s so data is
+// durable within a small window without an fsync-per-event hot path.
+func lootFlushLoop() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		lootWriter.mu.Lock()
+		if lootWriter.ready && lootWriter.buf != nil {
+			if err := lootWriter.buf.Flush(); err != nil {
+				log.Debugf("[LootLog] Periodic flush failed: %v", err)
+			}
+		}
+		lootWriter.mu.Unlock()
+	}
 }
 
 // append writes a single loot event to the file and syncs immediately.
@@ -252,7 +338,7 @@ func (w *lootFileWriter) append(ev *LootEvent) {
 
 	ts := time.UnixMilli(ev.Timestamp).UTC().Format(time.RFC3339)
 	// item_name: we only have the string ID (e.g. T4_BAG), not a localised display name
-	if _, err := fmt.Fprintf(w.file, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
+	if _, err := fmt.Fprintf(w.buf, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
 		ts,
 		ev.LootedBy.Alliance,
 		ev.LootedBy.Guild,
@@ -267,9 +353,8 @@ func (w *lootFileWriter) append(ev *LootEvent) {
 		log.Errorf("[LootLog] Write failed: %v", err)
 		return
 	}
-	if err := w.file.Sync(); err != nil {
-		log.Errorf("[LootLog] Sync failed: %v", err)
-	}
+	// No per-event fsync: buffered writer absorbs bursts, flushLoop persists
+	// every 5s, CloseLootFile drains on shutdown, VPS relay has realtime copy.
 }
 
 // appendDeath writes a single death event to the loot log file using the
@@ -292,7 +377,7 @@ func (w *lootFileWriter) appendDeath(ev *DeathEvent) {
 
 	ts := time.UnixMilli(ev.Timestamp).UTC().Format(time.RFC3339)
 	// Alliance is not available on DeathEvent today — leave blank for now.
-	fmt.Fprintf(w.file, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
+	fmt.Fprintf(w.buf, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
 		ts,
 		"",             // killer alliance
 		ev.KillerGuild, // killer guild
@@ -304,10 +389,12 @@ func (w *lootFileWriter) appendDeath(ev *DeathEvent) {
 		ev.VictimGuild, // victim guild
 		ev.VictimName,  // victim name
 	)
-	_ = w.file.Sync()
+	// Deaths are rare (compared to loot) but we still let flushLoop handle
+	// persistence — the VPS relay path already has the event in-flight.
 }
 
 // CloseLootFile flushes and closes the loot log file. Call on shutdown.
+// Drains the bufio buffer → kernel → disk so no buffered events are lost on exit.
 func CloseLootFile() {
 	lootWriter.mu.Lock()
 	defer lootWriter.mu.Unlock()
@@ -315,9 +402,15 @@ func CloseLootFile() {
 	if lootWriter.file == nil {
 		return
 	}
+	if lootWriter.buf != nil {
+		if err := lootWriter.buf.Flush(); err != nil {
+			log.Errorf("[LootLog] Final flush failed: %v", err)
+		}
+	}
 	_ = lootWriter.file.Sync()
 	lootWriter.file.Close()
 	lootWriter.file = nil
+	lootWriter.buf = nil
 	lootWriter.ready = false
 
 	if lootWriter.filePath != "" {

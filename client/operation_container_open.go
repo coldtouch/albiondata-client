@@ -1,10 +1,25 @@
 package client
 
 import (
-	"fmt"
+	"encoding/hex"
 
 	"github.com/ao-data/albiondata-client/log"
 )
+
+// guidHex renders a []int8 GUID as a lowercase hex string without allocating
+// a temporary byte slice per element. Replaces per-byte fmt.Sprintf loops that
+// showed up as hotspots during ZvZ (bulk vault opens + chest walks fire this
+// handler dozens of times per second).
+func guidHex(b []int8) string {
+	if len(b) == 0 {
+		return ""
+	}
+	buf := make([]byte, len(b))
+	for i, v := range b {
+		buf[i] = byte(v)
+	}
+	return hex.EncodeToString(buf)
+}
 
 // operationContainerOpen is triggered when a player clicks a container tab.
 // We log it for debugging but the actual capture happens in evAttachItemContainer
@@ -15,10 +30,7 @@ type operationContainerOpen struct {
 }
 
 func (op operationContainerOpen) Process(state *albionState) {
-	guid := ""
-	for _, b := range op.ContainerGUID {
-		guid += fmt.Sprintf("%02x", byte(b))
-	}
+	guid := guidHex(op.ContainerGUID)
 	log.Debugf("[ContainerOpen] slot=%d guid=%s len=%d", op.ContainerSlot, guid, len(op.ContainerGUID))
 
 	// Try to match for logging purposes
@@ -60,10 +72,7 @@ type eventAttachItemContainer struct {
 }
 
 func (ev eventAttachItemContainer) Process(state *albionState) {
-	guid := ""
-	for _, b := range ev.TabGUID {
-		guid += fmt.Sprintf("%02x", byte(b))
-	}
+	guid := guidHex(ev.TabGUID)
 
 	// Count non-zero slots
 	nonZero := 0
@@ -110,10 +119,7 @@ type operationContainerManageSubContainer struct {
 }
 
 func (op operationContainerManageSubContainer) Process(state *albionState) {
-	guid := ""
-	for _, b := range op.ContainerGUID {
-		guid += fmt.Sprintf("%02x", byte(b))
-	}
+	guid := guidHex(op.ContainerGUID)
 	log.Infof("[ContainerManageSubContainer] slot=%d guid=%s len=%d extra=%v",
 		op.ContainerSlot, guid, len(op.ContainerGUID), op.RawParams)
 

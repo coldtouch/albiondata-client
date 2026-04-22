@@ -1,12 +1,14 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ao-data/albiondata-client/log"
@@ -21,11 +23,48 @@ type VPSRelay struct {
 	url         string
 	token       string
 	sessionID   string // UUID per game run — survives WS reconnects so loot events don't fragment
-	connected   bool
+	connected   atomic.Bool // lock-free read for the send fast-path (ZvZ hot path)
 	stopCh      chan struct{} // signals connectLoop to stop
 	ctx         context.Context
 	ctxCancel   context.CancelFunc
 	pendingMsgs [][]byte // bounded queue for messages during disconnect
+}
+
+// relayBufPool is used by buildRelayMessage to avoid allocating a fresh
+// bytes.Buffer per Send* call. Every loot/death/chest/trade event previously
+// went through json.Marshal which allocates a ~1KB internal buffer + a temp
+// map[string]interface{}. During ZvZ this fired 100+ times/sec.
+var relayBufPool = sync.Pool{
+	New: func() interface{} { return new(bytes.Buffer) },
+}
+
+// buildRelayMessage serialises `{"type":<msgType>,"data":<data>}` into a fresh
+// []byte safe for the queue/WS write. Uses a pooled bytes.Buffer + the stdlib
+// encodeState pool inside encoding/json for zero-steady-state allocations
+// beyond the returned []byte.
+func buildRelayMessage(msgType string, data interface{}) ([]byte, error) {
+	buf := relayBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer relayBufPool.Put(buf)
+
+	buf.WriteString(`{"type":"`)
+	buf.WriteString(msgType)
+	buf.WriteString(`","data":`)
+
+	enc := json.NewEncoder(buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(data); err != nil {
+		return nil, err
+	}
+	// Encode writes a trailing '\n' — overwrite it with the closing envelope '}'.
+	bs := buf.Bytes()
+	bs[len(bs)-1] = '}'
+
+	// Copy out — the queue may hold this for a while and we're returning buf
+	// to the pool (which will .Reset() it on next Get).
+	out := make([]byte, len(bs))
+	copy(out, bs)
+	return out, nil
 }
 
 // newSessionUUID returns a UUIDv4 string. Used once per game run; survives WS reconnects.
@@ -141,25 +180,38 @@ func StopVPSRelay() {
 }
 
 // sendOrQueue sends a message immediately if connected, otherwise queues it for retry.
+//
+// Disconnect fast-path: reads `connected` via atomic load so callers during an
+// outage don't serialise on r.mu behind an in-flight WriteMessage — they just
+// grab the lock briefly to enqueue and return. Connected fast-path still
+// serialises on r.mu since gorilla/websocket requires exclusive writes.
 func (r *VPSRelay) sendOrQueue(msgJSON []byte) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if !r.connected || r.conn == nil {
-		// Queue for later
+	if !r.connected.Load() {
+		r.mu.Lock()
 		if len(r.pendingMsgs) < maxPendingMsgs {
 			r.pendingMsgs = append(r.pendingMsgs, msgJSON)
 			log.Debugf("[VPSRelay] Queued message (%d pending)", len(r.pendingMsgs))
 		} else {
 			log.Warnf("[VPSRelay] Queue full (%d msgs) — dropping message", maxPendingMsgs)
 		}
+		r.mu.Unlock()
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Re-check under lock — connected can flip between the atomic.Load above
+	// and acquiring mu (disconnect detected by reader goroutine or flushPending).
+	if !r.connected.Load() || r.conn == nil {
+		if len(r.pendingMsgs) < maxPendingMsgs {
+			r.pendingMsgs = append(r.pendingMsgs, msgJSON)
+		}
 		return false
 	}
 
 	if err := r.conn.WriteMessage(websocket.TextMessage, msgJSON); err != nil {
 		log.Errorf("[VPSRelay] Send failed: %v", err)
-		r.connected = false
-		// Queue this message for retry
+		r.connected.Store(false)
 		if len(r.pendingMsgs) < maxPendingMsgs {
 			r.pendingMsgs = append(r.pendingMsgs, msgJSON)
 		}
@@ -176,7 +228,7 @@ func (r *VPSRelay) sendOrQueue(msgJSON []byte) bool {
 // the flush window.
 func (r *VPSRelay) flushPending() {
 	r.mu.Lock()
-	if !r.connected || r.conn == nil || len(r.pendingMsgs) == 0 {
+	if !r.connected.Load() || r.conn == nil || len(r.pendingMsgs) == 0 {
 		r.mu.Unlock()
 		return
 	}
@@ -195,7 +247,7 @@ func (r *VPSRelay) flushPending() {
 			// Re-queue remaining (including failed message) at the FRONT,
 			// then append anything sendOrQueue added while we were flushing.
 			r.mu.Lock()
-			r.connected = false
+			r.connected.Store(false)
 			remaining := toSend[i:] // toSend[i] is the failed message
 			combined := make([][]byte, 0, len(remaining)+len(r.pendingMsgs))
 			combined = append(combined, remaining...)
@@ -223,7 +275,7 @@ func (r *VPSRelay) connect() (wasConnected bool) {
 		r.conn.Close()
 		r.conn = nil
 	}
-	r.connected = false
+	r.connected.Store(false)
 	r.mu.Unlock()
 
 	log.Debug("[VPSRelay] Connecting...")
@@ -277,7 +329,13 @@ func (r *VPSRelay) connect() (wasConnected bool) {
 	// (server broadcasts NATS market data to all WS clients, so first messages may not be auth)
 	// GO-C2: the goroutine receives ctx explicitly; cancellation closes conn, which
 	// causes ReadMessage to return an error and unblocks the goroutine.
-	authTimeout := time.After(30 * time.Second)
+	//
+	// Use a reusable *time.Timer instead of time.After(): each time.After call
+	// allocates a new runtime timer that lingers until fired even if auth
+	// completes in <1s. On a flaky network with frequent reconnects this leaks
+	// a timer per attempt.
+	authTimer := time.NewTimer(30 * time.Second)
+	defer authTimer.Stop()
 	authDone := make(chan bool, 1)
 
 	go func(ctx context.Context) {
@@ -297,9 +355,7 @@ func (r *VPSRelay) connect() (wasConnected bool) {
 
 			if resp["type"] == "client-auth" {
 				if resp["success"] == true {
-					r.mu.Lock()
-					r.connected = true
-					r.mu.Unlock()
+					r.connected.Store(true)
 					log.Infof("[VPSRelay] Authenticated as: %v", resp["username"])
 					authDone <- true
 				} else {
@@ -318,7 +374,7 @@ func (r *VPSRelay) connect() (wasConnected bool) {
 			conn.Close()
 			return false
 		}
-	case <-authTimeout:
+	case <-authTimer.C:
 		log.Warn("[VPSRelay] Auth timed out after 30s")
 		conn.Close()
 		return false
@@ -335,8 +391,8 @@ func (r *VPSRelay) connect() (wasConnected bool) {
 		_, _, err := conn.ReadMessage()
 		if err != nil {
 			log.Debug("[VPSRelay] Connection lost, will reconnect...")
+			r.connected.Store(false)
 			r.mu.Lock()
-			r.connected = false
 			r.conn = nil
 			r.mu.Unlock()
 			return true // was connected
@@ -349,8 +405,7 @@ func SendChestCapture(capture *ContainerCapture) {
 	if vpsRelay == nil {
 		return
 	}
-	msg := map[string]interface{}{"type": "chest-capture", "data": capture}
-	msgJSON, err := json.Marshal(msg)
+	msgJSON, err := buildRelayMessage("chest-capture", capture)
 	if err != nil {
 		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
@@ -364,8 +419,7 @@ func SendLootEvent(lootEvent *LootEvent) {
 	if vpsRelay == nil {
 		return
 	}
-	msg := map[string]interface{}{"type": "loot-event", "data": lootEvent}
-	msgJSON, err := json.Marshal(msg)
+	msgJSON, err := buildRelayMessage("loot-event", lootEvent)
 	if err != nil {
 		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
@@ -391,8 +445,7 @@ func SendChestLogBatch(batch *ChestLogBatch) {
 	if vpsRelay == nil {
 		return
 	}
-	msg := map[string]interface{}{"type": "chest-log-batch", "data": batch}
-	msgJSON, err := json.Marshal(msg)
+	msgJSON, err := buildRelayMessage("chest-log-batch", batch)
 	if err != nil {
 		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
@@ -406,8 +459,7 @@ func SendDeathEvent(deathEvent *DeathEvent) {
 	if vpsRelay == nil {
 		return
 	}
-	msg := map[string]interface{}{"type": "death-event", "data": deathEvent}
-	msgJSON, err := json.Marshal(msg)
+	msgJSON, err := buildRelayMessage("death-event", deathEvent)
 	if err != nil {
 		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
@@ -447,8 +499,7 @@ func SendTradeEvent(trade *TradeEvent) {
 	if vpsRelay == nil {
 		return
 	}
-	msg := map[string]interface{}{"type": "trade-event", "data": trade}
-	msgJSON, err := json.Marshal(msg)
+	msgJSON, err := buildRelayMessage("trade-event", trade)
 	if err != nil {
 		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return
@@ -462,8 +513,7 @@ func SendSaleNotification(sale *SaleNotification) {
 	if vpsRelay == nil {
 		return
 	}
-	msg := map[string]interface{}{"type": "sale-notification", "data": sale}
-	msgJSON, err := json.Marshal(msg)
+	msgJSON, err := buildRelayMessage("sale-notification", sale)
 	if err != nil {
 		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
 		return

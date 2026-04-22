@@ -134,10 +134,23 @@ func runHTTPServer() {
 	}
 }
 
+// sendMsgToWebSockets wraps a pre-serialised JSON payload in a `{"topic":..., "data":...}`
+// envelope and hands it to the WS hub. The old implementation used three string
+// concatenations (topic, msg→string, closing brace) which allocated three heap
+// objects per broadcast — a real cost at 100+ events/sec during ZvZ.
+//
+// This version builds the envelope in one []byte with a pre-sized buffer, so
+// only the final []byte is allocated. `topic` is short and comes from a fixed
+// set ("marketorders.deduped" etc.), never player input, so it's safe to emit
+// raw without JSON-escaping. `msg` is already valid JSON from json.Marshal.
 func sendMsgToWebSockets(msg []byte, topic string) {
-	// TODO (gradius): send JSON data with topic string
-	// TODO (gradius): this seems super hacky, and I'm sure there's a better way.
-	var result string
-	result = "{\"topic\": \"" + topic + "\", \"data\": " + string(msg) + "}"
-	wsHub.broadcast <- []byte(result)
+	// Fixed overhead of the envelope characters: {"topic":"","data":}
+	const envelopeOverhead = len(`{"topic":"","data":}`)
+	out := make([]byte, 0, envelopeOverhead+len(topic)+len(msg))
+	out = append(out, `{"topic":"`...)
+	out = append(out, topic...)
+	out = append(out, `","data":`...)
+	out = append(out, msg...)
+	out = append(out, '}')
+	wsHub.broadcast <- out
 }

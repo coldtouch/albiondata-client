@@ -25,9 +25,10 @@ type eventDied struct {
 }
 
 func (ev eventDied) Process(state *albionState) {
-	log.Infof("[Death] %s [%s] was killed by %s [%s]",
+	log.Debugf("[Death] %s [%s] was killed by %s [%s]",
 		ev.VictimName, ev.VictimGuild,
 		ev.KillerName, ev.KillerGuild)
+	deathEventCount.Add(1)
 
 	deathEvent := &DeathEvent{
 		Timestamp:        time.Now().UnixMilli(),
@@ -51,9 +52,10 @@ type eventKilledPlayer struct {
 }
 
 func (ev eventKilledPlayer) Process(state *albionState) {
-	log.Infof("[Kill] %s [%s] killed %s [%s]",
+	log.Debugf("[Kill] %s [%s] killed %s [%s]",
 		ev.KillerName, ev.KillerGuild,
 		ev.VictimName, ev.VictimGuild)
+	deathEventCount.Add(1)
 
 	deathEvent := &DeathEvent{
 		Timestamp:        time.Now().UnixMilli(),
