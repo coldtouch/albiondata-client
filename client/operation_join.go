@@ -29,6 +29,7 @@ func (op operationJoinResponse) Process(state *albionState) {
 
 	log.Infof("Updating player location to %v.", op.Location)
 	state.SetLocationId(op.Location)
+	state.SetCurrentZone(op.Location)
 
 	if state.GetCharacterId() != op.CharacterID {
 		log.Infof("Updating player ID to %v.", op.CharacterID)

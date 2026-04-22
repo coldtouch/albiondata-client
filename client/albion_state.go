@@ -25,6 +25,7 @@ type albionState struct {
 
 	LocationId           string
 	LocationString       string
+	CurrentZone          string
 	CharacterId          lib.CharacterID
 	CharacterName        string
 	GameServerIP         string
@@ -92,6 +93,18 @@ func (state *albionState) GetBanditEventLastTimeSubmitted() time.Time {
 }
 
 // --- Thread-safe setters (use Lock) ---
+
+func (state *albionState) GetCurrentZone() string {
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+	return state.CurrentZone
+}
+
+func (state *albionState) SetCurrentZone(v string) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.CurrentZone = v
+}
 
 func (state *albionState) SetLocationId(v string) {
 	state.mu.Lock()

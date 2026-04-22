@@ -155,7 +155,8 @@ type LootEvent struct {
 	NumericID  int        `json:"numericId"`  // Raw numeric ID
 	Quantity   int        `json:"quantity"`
 	IsSilver   bool       `json:"isSilver"`
-	Weight     float64    `json:"weight"` // Per-unit weight
+	Weight     float64    `json:"weight"`    // Per-unit weight
+	Location   string     `json:"location"`  // Zone ID at time of loot
 }
 
 // eventOtherGrabbedLoot fires when a player picks up loot from a corpse/bag.
@@ -197,6 +198,7 @@ func (ev eventOtherGrabbedLoot) Process(state *albionState) {
 		Quantity:   qty,
 		IsSilver:   ev.IsSilver,
 		Weight:     resolveItemWeight(int(ev.ItemNumID)),
+		Location:   state.GetCurrentZone(),
 	}
 
 	// Per-event logging at Debug level only — under ZvZ this fires 100+ times/s

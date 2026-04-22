@@ -13,6 +13,7 @@ type DeathEvent struct {
 	VictimGuild      string         `json:"victimGuild"`
 	KillerName       string         `json:"killerName"`
 	KillerGuild      string         `json:"killerGuild"`
+	Location         string         `json:"location"`                   // Zone ID at time of death
 	EquipmentAtDeath []EquippedItem `json:"equipmentAtDeath,omitempty"` // B6
 }
 
@@ -36,6 +37,7 @@ func (ev eventDied) Process(state *albionState) {
 		VictimGuild:      ev.VictimGuild,
 		KillerName:       ev.KillerName,
 		KillerGuild:      ev.KillerGuild,
+		Location:         state.GetCurrentZone(),
 		EquipmentAtDeath: getEquipmentForPlayer(ev.VictimName),
 	}
 	// Persist to the local .txt log file (so offline uploads carry deaths, not just loot)
@@ -63,6 +65,7 @@ func (ev eventKilledPlayer) Process(state *albionState) {
 		VictimGuild:      ev.VictimGuild,
 		KillerName:       ev.KillerName,
 		KillerGuild:      ev.KillerGuild,
+		Location:         state.GetCurrentZone(),
 		EquipmentAtDeath: getEquipmentForPlayer(ev.VictimName),
 	}
 	// Persist to the local .txt log file (so offline uploads carry deaths, not just loot)
