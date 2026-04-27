@@ -208,6 +208,13 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 	switch OperationType(code) {
 	case opJoin:
 		operation = &operationJoinResponse{}
+	case opChangeCluster:
+		// Zone-transition response — fires every time the player crosses a
+		// cluster boundary (walking out of hideout, traversing portals, etc.).
+		// Without this, currentZone only updated on initial connect, so any
+		// in-session zone change went silent — meaning loot/death events fired
+		// in subsequent zones still carried the connect-time location.
+		operation = &operationChangeClusterResponse{}
 	case opAuctionGetOffers:
 		operation = &operationAuctionGetOffersResponse{}
 	case opAuctionGetRequests:
@@ -257,6 +264,8 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		switch OperationType(shifted) {
 		case opJoin:
 			operation = &operationJoinResponse{}
+		case opChangeCluster:
+			operation = &operationChangeClusterResponse{}
 		case opAuctionGetOffers:
 			operation = &operationAuctionGetOffersResponse{}
 		case opAuctionGetRequests:

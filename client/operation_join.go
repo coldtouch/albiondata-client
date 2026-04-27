@@ -9,11 +9,18 @@ import (
 type operationJoinResponse struct {
 	CharacterID   lib.CharacterID `mapstructure:"1"`
 	CharacterName string          `mapstructure:"2"`
-	// April 2026 opcode shift moved the zone identifier from param 8 → param 67.
-	// Confirmed via [ZONE-DIAG] dump on 2026-04-27: param 67 carries values like
-	// "@HIDEOUT@3312@ea1f0b23-…" (Albion's hideout zone identifier convention)
-	// while param 8 now holds an unrelated numeric string that varies per join.
-	Location  string          `mapstructure:"67"`
+	// Param 8 IS the current zone. Earlier in this session I incorrectly
+	// switched to param 67 because I'd confused the player's HOME reference
+	// (param 67, always "@HIDEOUT@3312@<UUID>" for this user) with the player's
+	// CURRENT location. A 3-zone walk-out test (hideout → 3312 → 3348 → 3312
+	// → hideout) on 2026-04-27 confirmed param 8 matches the destination of the
+	// preceding opChangeCluster every time:
+	//   16:27:53 OpJoin param 8 = "3312"                 (in zone 3312)
+	//   16:28:57 OpJoin param 8 = "3348"                 (in zone 3348)
+	//   16:30:15 OpJoin param 8 = "@HIDEOUT@3312@<UUID>" (in hideout)
+	// while param 67 stayed pinned to the hideout string the whole time.
+	// The April 2026 opcode shift did NOT move this field — it always was 8.
+	Location  string          `mapstructure:"8"`
 	GuildID   lib.CharacterID `mapstructure:"53"`
 	GuildName string          `mapstructure:"57"`
 }
