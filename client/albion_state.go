@@ -179,12 +179,14 @@ func (state *albionState) SetServerFromIP(ip string) {
 	}
 }
 
+// onlyDigitsRe is package-level so we don't recompile the regex on every
+// IsValidLocation call (fires per market query — frequent during browsing).
+var onlyDigitsRe = regexp.MustCompile(`^[0-9]+$`)
+
 func (state *albionState) IsValidLocation() bool {
 	state.mu.RLock()
 	locId := state.LocationId
 	state.mu.RUnlock()
-
-	var onlydigits = regexp.MustCompile(`^[0-9]+$`)
 
 	switch {
 	case locId == "":
@@ -194,7 +196,7 @@ func (state *albionState) IsValidLocation() bool {
 		}
 		return false
 
-	case onlydigits.MatchString(locId):
+	case onlyDigitsRe.MatchString(locId):
 		return true
 	case strings.HasPrefix(locId, "BLACKBANK-"):
 		return true

@@ -334,7 +334,11 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 	case evNewEquipmentItem:
 		event = &eventNewEquipmentItem{}
 	case evInventoryPutItem:
-		event = &eventInventoryPutItem{}
+		// Short-circuit: handler is intentionally a no-op, so skip the entire
+		// decodeParams pipeline (mapstructure.NewDecoder + map[string]interface{}
+		// allocation per packet). evInventoryPutItem fires every time an item
+		// moves in any visible container — high frequency in chests/storage UI.
+		return nil, nil
 	case evNewJournalItem:
 		event = &eventNewJournalItem{}
 	case evNewFurnitureItem:
