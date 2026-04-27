@@ -5,11 +5,49 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"sync"
 
 	"github.com/ao-data/albiondata-client/lib"
 	"github.com/ao-data/albiondata-client/log"
 	"github.com/mitchellh/mapstructure"
 )
+
+// Hoisted package-level reflect types — these were previously created on every
+// decodeParams call inside the convertGameObjects closure (per-event allocs).
+var (
+	int8SliceType   = reflect.TypeOf([]int8{})
+	characterIDType = reflect.TypeOf(lib.CharacterID(""))
+)
+
+// convertGameObjects is the mapstructure decode hook — hoisted from a per-call
+// closure inside decodeParams so the function value isn't reallocated each
+// event. Captures nothing.
+func convertGameObjects(from reflect.Type, to reflect.Type, v interface{}) (interface{}, error) {
+	if from == int8SliceType && to == characterIDType {
+		log.Debug("Parsing character ID from mixed-endian UUID")
+		return decodeCharacterID(v.([]int8)), nil
+	}
+	// V18 sends CompressedInt (int32) where V16 sent int16 — auto-convert
+	if from.Kind() == reflect.Int32 && to.Kind() == reflect.Int16 {
+		return int16(v.(int32)), nil
+	}
+	if from.Kind() == reflect.Int32 && to.Kind() == reflect.Int8 {
+		return int8(v.(int32)), nil
+	}
+	if from.Kind() == reflect.Int64 && to.Kind() == reflect.Int32 {
+		return int32(v.(int64)), nil
+	}
+	return v, nil
+}
+
+// stringMapPool reuses the uint8→string param map across decodeParams calls so
+// the listener goroutine doesn't allocate a fresh map[string]interface{} per
+// decoded event (was a top GC source during ZvZ at 100+ events/sec).
+var stringMapPool = sync.Pool{
+	New: func() interface{} {
+		return make(map[string]interface{}, 32)
+	},
+}
 
 // toInt16 safely converts a Photon param to int16. The game can send codes as
 // int8, int16, int32, or even string depending on the protocol version.
@@ -383,26 +421,6 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 }
 
 func decodeParams(params map[uint8]interface{}, operation operation) error {
-	convertGameObjects := func(from reflect.Type, to reflect.Type, v interface{}) (interface{}, error) {
-		if from == reflect.TypeOf([]int8{}) && to == reflect.TypeOf(lib.CharacterID("")) {
-			log.Debug("Parsing character ID from mixed-endian UUID")
-			return decodeCharacterID(v.([]int8)), nil
-		}
-
-		// V18 sends CompressedInt (int32) where V16 sent int16 — auto-convert
-		if from.Kind() == reflect.Int32 && to.Kind() == reflect.Int16 {
-			return int16(v.(int32)), nil
-		}
-		if from.Kind() == reflect.Int32 && to.Kind() == reflect.Int8 {
-			return int8(v.(int32)), nil
-		}
-		if from.Kind() == reflect.Int64 && to.Kind() == reflect.Int32 {
-			return int32(v.(int64)), nil
-		}
-
-		return v, nil
-	}
-
 	config := mapstructure.DecoderConfig{
 		WeaklyTypedInput: true, // V18 sends different Go types than struct fields expect
 		DecodeHook:       convertGameObjects,
@@ -414,12 +432,15 @@ func decodeParams(params map[uint8]interface{}, operation operation) error {
 		return err
 	}
 
-	stringMap := make(map[string]interface{})
+	stringMap := stringMapPool.Get().(map[string]interface{})
+	clear(stringMap)
 	for k, v := range params {
 		stringMap[strconv.Itoa(int(k))] = v
 	}
 
 	err = decoder.Decode(stringMap)
+
+	stringMapPool.Put(stringMap)
 
 	return err
 }

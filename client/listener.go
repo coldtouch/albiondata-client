@@ -22,6 +22,12 @@ type listener struct {
 	fragments     *photon.FragmentBuffer
 	quit          chan bool
 	router        *Router
+	// lastSrcIPv4 caches the source IPv4 of the most recently processed packet
+	// (packed as big-endian uint32). Game server IP is set on session join and
+	// effectively never changes thereafter — caching skips the per-packet
+	// .String() allocation and albionstate mutex grab on the >99.9 % of packets
+	// where the source hasn't moved.
+	lastSrcIPv4 uint32
 }
 
 func newListener(router *Router) *listener {
@@ -145,25 +151,25 @@ func (l *listener) stop() {
 
 func (l *listener) processPacket(packet gopacket.Packet) {
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
-
 	if ipLayer == nil {
 		return
 	}
-
 	ipv4 := ipLayer.(*layers.IPv4)
-
-	if ipLayer != nil {
-		ipv4, _ = ipLayer.(*layers.IPv4)
-		log.Tracef("Packet came from: %s", ipv4.SrcIP)
-	}
-
 	if ipv4.SrcIP == nil {
-		log.Trace("No IPv4 detected")
 		return
 	}
-	l.router.albionstate.SetServerFromIP(ipv4.SrcIP.String())
-	log.Tracef("Server ID: %d", l.router.albionstate.GetAODataServerID())
-	log.Tracef("Using AODataIngestBaseURL: %s", l.router.albionstate.GetAODataIngestBaseURL())
+
+	// Pack source IPv4 as a uint32 for a single-cmp cache hit. Skip
+	// SetServerFromIP (.String() alloc + mutex grab) when the IP hasn't moved.
+	srcIP := ipv4.SrcIP
+	var srcIPKey uint32
+	if len(srcIP) >= 4 {
+		srcIPKey = uint32(srcIP[0])<<24 | uint32(srcIP[1])<<16 | uint32(srcIP[2])<<8 | uint32(srcIP[3])
+	}
+	if srcIPKey != l.lastSrcIPv4 {
+		l.lastSrcIPv4 = srcIPKey
+		l.router.albionstate.SetServerFromIP(srcIP.String())
+	}
 
 	layer := packet.Layer(photon.PhotonLayerType)
 
@@ -181,9 +187,9 @@ func (l *listener) processPacket(packet gopacket.Packet) {
 			if len(command.Data) < 4 {
 				continue // malformed unreliable packet
 			}
-			var s = make([]byte, len(command.Data)-4)
-			copy(s, command.Data[4:])
-			command.Data = s
+			// Reslice instead of make+copy — saves an alloc per unreliable
+			// packet (position updates fire constantly during PvP).
+			command.Data = command.Data[4:]
 			command.Length -= 4
 			command.Type = 6
 			l.onReliableCommand(&command)
