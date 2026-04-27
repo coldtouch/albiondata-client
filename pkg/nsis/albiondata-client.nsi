@@ -154,8 +154,15 @@ Section $(TEXT_SecBase) SecBase
 ; predictability of which session captures what). Users who want auto-start can
 ; create the task manually:
 ;   schtasks /Create /F /SC ONLOGON /RL HIGHEST /TN "Albion Data Client" /TR "<exe-path> -minimize"
-; The uninstaller's schtasks /Delete is kept so existing installations get cleaned
-; up on uninstall, even though we no longer create it.
+;
+; Auto-cleanup of any pre-existing scheduled task from older installs (v1.3.1
+; or earlier created the task). On a fresh install the schtasks /Delete will
+; print "ERROR: The system cannot find the file specified." and exit non-zero;
+; we ignore the exit code via the Pop-and-discard pattern. The installer
+; already runs as admin (RequestExecutionLevel admin above) so schtasks has
+; the rights it needs to delete a /RL HIGHEST task created by the old installer.
+nsExec::Exec '"$SYSDIR\schtasks.exe" /Delete /TN "Albion Data Client" /F'
+Pop $0  ; discard exit code — task may not exist on fresh install, that's fine
 
 SectionEnd
 
