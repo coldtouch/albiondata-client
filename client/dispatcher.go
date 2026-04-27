@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
 
 	"strings"
 
@@ -16,6 +17,42 @@ var (
 	wsHub *WSHub
 	dis   *dispatcher
 )
+
+// uploaderCache reuses constructed uploaders across send calls. Without this
+// cache, sendMsgToPublicUploaders / sendMsgToPrivateUploaders rebuilt the entire
+// uploader chain (including a brand-new nats.Connect and a fresh http.Transport)
+// for EVERY dispatched message — leaking a NATS TCP connection per message in
+// the NATS path and defeating HTTP keep-alive in the POW path.
+//
+// Keyed by the (resolved) comma-separated target URL string. The Public list's
+// magic placeholder gets resolved to a per-region URL up to 4 distinct keys
+// (one per game-server region we've seen this run), so the cache stays bounded.
+var (
+	uploaderCacheMu sync.RWMutex
+	uploaderCache   = make(map[string][]uploader)
+)
+
+// getOrCreateUploaders returns the cached uploader chain for targets, or builds
+// and caches it on the first call. Double-check locking ensures createUploaders
+// runs at most once per unique target string even under concurrent send calls
+// from the worker pool.
+func getOrCreateUploaders(targets string) []uploader {
+	uploaderCacheMu.RLock()
+	if cached, ok := uploaderCache[targets]; ok {
+		uploaderCacheMu.RUnlock()
+		return cached
+	}
+	uploaderCacheMu.RUnlock()
+
+	uploaderCacheMu.Lock()
+	defer uploaderCacheMu.Unlock()
+	if cached, ok := uploaderCache[targets]; ok {
+		return cached
+	}
+	created := createUploaders(strings.Split(targets, ","))
+	uploaderCache[targets] = created
+	return created
+}
 
 func createDispatcher() {
 	dis = &dispatcher{}
@@ -66,8 +103,8 @@ func sendMsgToPublicUploaders(upload interface{}, topic string, state *albionSta
 		PublicIngestBaseUrls = strings.Replace(PublicIngestBaseUrls, "https+pow://albion-online-data.com", state.GetAODataIngestBaseURL(), -1)
 	}
 
-	var publicUploaders = createUploaders(strings.Split(PublicIngestBaseUrls, ","))
-	var privateUploaders = createUploaders(strings.Split(ConfigGlobal.PrivateIngestBaseUrls, ","))
+	publicUploaders := getOrCreateUploaders(PublicIngestBaseUrls)
+	privateUploaders := getOrCreateUploaders(ConfigGlobal.PrivateIngestBaseUrls)
 
 	sendMsgToUploaders(data, topic, publicUploaders, state, identifier)
 	sendMsgToUploaders(data, topic, privateUploaders, state, identifier)
@@ -100,7 +137,7 @@ func sendMsgToPrivateUploaders(upload lib.PersonalizedUpload, topic string, stat
 		return
 	}
 
-	var privateUploaders = createUploaders(strings.Split(ConfigGlobal.PrivateIngestBaseUrls, ","))
+	privateUploaders := getOrCreateUploaders(ConfigGlobal.PrivateIngestBaseUrls)
 	if len(privateUploaders) > 0 {
 		sendMsgToUploaders(data, topic, privateUploaders, state, identifier)
 	}
