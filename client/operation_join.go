@@ -9,9 +9,13 @@ import (
 type operationJoinResponse struct {
 	CharacterID   lib.CharacterID `mapstructure:"1"`
 	CharacterName string          `mapstructure:"2"`
-	Location      string          `mapstructure:"8"`
-	GuildID       lib.CharacterID `mapstructure:"53"`
-	GuildName     string          `mapstructure:"57"`
+	// April 2026 opcode shift moved the zone identifier from param 8 → param 67.
+	// Confirmed via [ZONE-DIAG] dump on 2026-04-27: param 67 carries values like
+	// "@HIDEOUT@3312@ea1f0b23-…" (Albion's hideout zone identifier convention)
+	// while param 8 now holds an unrelated numeric string that varies per join.
+	Location  string          `mapstructure:"67"`
+	GuildID   lib.CharacterID `mapstructure:"53"`
+	GuildName string          `mapstructure:"57"`
 }
 
 //CharacterPartsJSON string          `mapstructure:"6"`

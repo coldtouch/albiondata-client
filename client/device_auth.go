@@ -45,27 +45,48 @@ func RunDeviceAuth() (string, error) {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+
+	// Non-200 → surface the real error. Without this guard, an error response
+	// like {"error":"Too many device code requests…"} unmarshals into the empty
+	// deviceCodeResponse struct (zero values across the board), the polling loop's
+	// deadline becomes time.Now(), and the user sees a confusing "timed out" with
+	// blank URL/Code lines instead of the actual rate-limit / server error.
+	if resp.StatusCode != 200 {
+		var errResp struct{ Error string `json:"error"` }
+		_ = json.Unmarshal(body, &errResp)
+		if errResp.Error != "" {
+			return "", fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
+		}
+		return "", fmt.Errorf("server returned %d (body: %s)", resp.StatusCode, string(body))
+	}
+
 	var codeResp deviceCodeResponse
 	if err := json.Unmarshal(body, &codeResp); err != nil {
 		return "", fmt.Errorf("failed to parse device code response: %v", err)
 	}
+	if codeResp.UserCode == "" || codeResp.DeviceCode == "" || codeResp.ExpiresIn <= 0 {
+		return "", fmt.Errorf("server returned malformed device code response (body: %s)", string(body))
+	}
 
-	// Step 2: Show the user the code and URL
+	// Step 2: Show the user the code and URL.
+	// URL is printed on its own line outside the box — it's >40 chars so it would
+	// otherwise be truncated by the box padding, leaving the user unable to copy
+	// the full link (including the ?device=... query that triggers the modal).
 	fmt.Println()
 	fmt.Println("╔══════════════════════════════════════════════╗")
 	fmt.Println("║     COLDTOUCH DATA CLIENT - DEVICE LOGIN     ║")
 	fmt.Println("╠══════════════════════════════════════════════╣")
 	fmt.Println("║                                              ║")
-	fmt.Printf("║  1. Open your browser and go to:             ║\n")
-	fmt.Printf("║     %-40s ║\n", codeResp.VerificationURI)
+	fmt.Println("║  1. Open the URL below in your browser       ║")
+	fmt.Println("║  2. Click 'Authorize' on the website         ║")
 	fmt.Println("║                                              ║")
-	fmt.Printf("║  2. Enter code:  %-28s║\n", codeResp.UserCode)
-	fmt.Println("║                                              ║")
-	fmt.Println("║  3. Click 'Authorize' on the website         ║")
-	fmt.Println("║                                              ║")
-	fmt.Printf("║  Code expires in %d minutes                  ║\n", codeResp.ExpiresIn/60)
+	// Right-align the value so a 1- or 2-digit minute value keeps the box closed.
+	fmt.Printf("║  Code expires in %2d minutes                  ║\n", codeResp.ExpiresIn/60)
 	fmt.Println("║                                              ║")
 	fmt.Println("╚══════════════════════════════════════════════╝")
+	fmt.Println()
+	fmt.Printf("  URL:  %s\n", codeResp.VerificationURI)
+	fmt.Printf("  Code: %s   (already embedded in the URL)\n", codeResp.UserCode)
 	fmt.Println()
 	fmt.Println("Waiting for authorization...")
 
