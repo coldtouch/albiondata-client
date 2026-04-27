@@ -339,8 +339,12 @@ func (w *lootFileWriter) append(ev *LootEvent) {
 	}
 
 	ts := time.UnixMilli(ev.Timestamp).UTC().Format(time.RFC3339)
-	// item_name: we only have the string ID (e.g. T4_BAG), not a localised display name
-	if _, err := fmt.Fprintf(w.buf, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
+	// 11th column (numeric_id) added 2026-04-27: lets the backend re-resolve the
+	// item via its canonical itemmap when the file is uploaded later, even if the
+	// writing client had a stale itemmap.json (off-by-one item-id bug). Old parsers
+	// that split on ; and only read fields 0..9 still work — extra column is ignored.
+	// item_name (column 5): we only have the string ID, not a localized display name.
+	if _, err := fmt.Fprintf(w.buf, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s;%d\n",
 		ts,
 		ev.LootedBy.Alliance,
 		ev.LootedBy.Guild,
@@ -351,6 +355,7 @@ func (w *lootFileWriter) append(ev *LootEvent) {
 		ev.LootedFrom.Alliance,
 		ev.LootedFrom.Guild,
 		ev.LootedFrom.Name,
+		ev.NumericID,
 	); err != nil {
 		log.Errorf("[LootLog] Write failed: %v", err)
 		return
@@ -379,7 +384,9 @@ func (w *lootFileWriter) appendDeath(ev *DeathEvent) {
 
 	ts := time.UnixMilli(ev.Timestamp).UTC().Format(time.RFC3339)
 	// Alliance is not available on DeathEvent today — leave blank for now.
-	fmt.Fprintf(w.buf, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s\n",
+	// 11th column (numeric_id) is 0 for death sentinel rows — keeps the column
+	// count consistent across all rows so parsers can rely on a stable schema.
+	fmt.Fprintf(w.buf, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s;%d\n",
 		ts,
 		"",             // killer alliance
 		ev.KillerGuild, // killer guild
@@ -390,6 +397,7 @@ func (w *lootFileWriter) appendDeath(ev *DeathEvent) {
 		"",             // victim alliance
 		ev.VictimGuild, // victim guild
 		ev.VictimName,  // victim name
+		0,              // numeric_id — N/A for deaths
 	)
 	// Deaths are rare (compared to loot) but we still let flushLoop handle
 	// persistence — the VPS relay path already has the event in-flight.

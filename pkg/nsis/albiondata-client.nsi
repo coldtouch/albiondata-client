@@ -149,8 +149,13 @@ Section $(TEXT_SecBase) SecBase
   SetOutPath "$INSTDIR"
   CreateShortCut "$DESKTOP\${PACKAGE_NAME}.lnk" "$INSTDIR\${PACKAGE_EXE}"
 
-; Create Task to run the Client as Admin on Logon
-  Exec 'c:\Windows\System32\schtasks.exe /Create /F /SC ONLOGON /RL HIGHEST /TN "Albion Data Client" /TR "\"$INSTDIR\albiondata-client.exe\" -minimize"'
+; Auto-startup task removed 2026-04-27 — users want explicit control over when the
+; client runs (matters for: privacy, packet-capture overhead during non-game time,
+; predictability of which session captures what). Users who want auto-start can
+; create the task manually:
+;   schtasks /Create /F /SC ONLOGON /RL HIGHEST /TN "Albion Data Client" /TR "<exe-path> -minimize"
+; The uninstaller's schtasks /Delete is kept so existing installations get cleaned
+; up on uninstall, even though we no longer create it.
 
 SectionEnd
 
