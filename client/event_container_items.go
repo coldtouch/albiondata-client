@@ -294,8 +294,13 @@ func BuildCaptureFromSlots(slotIDs []int, containerGUID string, tabName string, 
 	var filtered int
 
 	for _, slotID := range slotIDs {
-		if slotID == 0 {
-			continue // empty slot
+		if slotID <= 0 {
+			// 2026-04-28: negative slot IDs are sentinel values for reserved/locked
+			// slots (tab dividers, premium-locked, hideout-bound). They are NOT items
+			// in our itemmap (verified against ao-bin-dumps + 4 community clients) so
+			// passing them to globalItemCache.Load fails and renders as UNKNOWN_-X
+			// in the website. Skip them like empty slots.
+			continue
 		}
 		if val, ok := globalItemCache.Load(slotID); ok {
 			item := val.(cachedItemEntry).item
