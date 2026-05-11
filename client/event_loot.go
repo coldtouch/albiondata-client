@@ -2,9 +2,11 @@ package client
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,7 +30,7 @@ type cachedPlayer struct {
 	cachedAt time.Time
 }
 
-var playerCache sync.Map // map[string]*cachedPlayer — key is player name
+var playerCache sync.Map    // map[string]*cachedPlayer — key is player name
 var objectIDToName sync.Map // map[int64]string — populated by eventNewCharacter / eventCharacterStats
 
 const playerCacheTTL = 30 * time.Minute
@@ -155,8 +157,8 @@ type LootEvent struct {
 	NumericID  int        `json:"numericId"`  // Raw numeric ID
 	Quantity   int        `json:"quantity"`
 	IsSilver   bool       `json:"isSilver"`
-	Weight     float64    `json:"weight"`    // Per-unit weight
-	Location   string     `json:"location"`  // Zone ID at time of loot
+	Weight     float64    `json:"weight"`   // Per-unit weight
+	Location   string     `json:"location"` // Zone ID at time of loot
 }
 
 // eventOtherGrabbedLoot fires when a player picks up loot from a corpse/bag.
@@ -219,7 +221,9 @@ func (ev eventOtherGrabbedLoot) Process(state *albionState) {
 // Writes each loot event to a semicolon-delimited .txt file as it arrives,
 // compatible with ao-loot-logger format so files can be uploaded to the website.
 //
-// Format: timestamp_utc;looted_by__alliance;looted_by__guild;looted_by__name;item_id;item_name;quantity;looted_from__alliance;looted_from__guild;looted_from__name
+// Format: timestamp_utc;looted_by__alliance;looted_by__guild;looted_by__name;
+// item_id;item_name;quantity;looted_from__alliance;looted_from__guild;
+// looted_from__name;numeric_id;location;equipment_json
 
 // lootFileWriter uses a bufio.Writer over the underlying *os.File so each loot
 // event hits an in-process buffer (no syscall), is flushed to the kernel every
@@ -282,8 +286,9 @@ func (w *lootFileWriter) ensureInit() error {
 
 	buf := bufio.NewWriterSize(f, lootWriteBufSize)
 
-	// Write the header line
-	_, err = fmt.Fprintln(buf, "timestamp_utc;looted_by__alliance;looted_by__guild;looted_by__name;item_id;item_name;quantity;looted_from__alliance;looted_from__guild;looted_from__name")
+	// Write the header line. The first ten columns remain ao-loot-logger
+	// compatible; newer columns are optional and ignored by old parsers.
+	_, err = fmt.Fprintln(buf, "timestamp_utc;looted_by__alliance;looted_by__guild;looted_by__name;item_id;item_name;quantity;looted_from__alliance;looted_from__guild;looted_from__name;numeric_id;location;equipment_json")
 	if err != nil {
 		f.Close()
 		return fmt.Errorf("failed to write loot log header: %w", err)
@@ -310,6 +315,10 @@ func (w *lootFileWriter) ensureInit() error {
 
 	log.Infof("[LootLog] Writing loot events to %s", w.filePath)
 	return nil
+}
+
+func lootLogField(s string) string {
+	return strings.NewReplacer(";", " ", "\r", " ", "\n", " ", "\t", " ").Replace(s)
 }
 
 // lootFlushLoop pushes the bufio buffer to the kernel every 5s so data is
@@ -343,19 +352,22 @@ func (w *lootFileWriter) append(ev *LootEvent) {
 	// item via its canonical itemmap when the file is uploaded later, even if the
 	// writing client had a stale itemmap.json (off-by-one item-id bug). Old parsers
 	// that split on ; and only read fields 0..9 still work — extra column is ignored.
+	// 12th column keeps the zone for offline uploads; 13th is only used on death rows.
 	// item_name (column 5): we only have the string ID, not a localized display name.
-	if _, err := fmt.Fprintf(w.buf, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s;%d\n",
+	if _, err := fmt.Fprintf(w.buf, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s;%d;%s;%s\n",
 		ts,
-		ev.LootedBy.Alliance,
-		ev.LootedBy.Guild,
-		ev.LootedBy.Name,
-		ev.ItemID,
-		ev.ItemID,
+		lootLogField(ev.LootedBy.Alliance),
+		lootLogField(ev.LootedBy.Guild),
+		lootLogField(ev.LootedBy.Name),
+		lootLogField(ev.ItemID),
+		lootLogField(ev.ItemID),
 		ev.Quantity,
-		ev.LootedFrom.Alliance,
-		ev.LootedFrom.Guild,
-		ev.LootedFrom.Name,
+		lootLogField(ev.LootedFrom.Alliance),
+		lootLogField(ev.LootedFrom.Guild),
+		lootLogField(ev.LootedFrom.Name),
 		ev.NumericID,
+		lootLogField(ev.Location),
+		"",
 	); err != nil {
 		log.Errorf("[LootLog] Write failed: %v", err)
 		return
@@ -386,18 +398,26 @@ func (w *lootFileWriter) appendDeath(ev *DeathEvent) {
 	// Alliance is not available on DeathEvent today — leave blank for now.
 	// 11th column (numeric_id) is 0 for death sentinel rows — keeps the column
 	// count consistent across all rows so parsers can rely on a stable schema.
-	fmt.Fprintf(w.buf, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s;%d\n",
+	equipmentJSON := ""
+	if len(ev.EquipmentAtDeath) > 0 {
+		if bs, err := json.Marshal(ev.EquipmentAtDeath); err == nil {
+			equipmentJSON = string(bs)
+		}
+	}
+	fmt.Fprintf(w.buf, "%s;%s;%s;%s;%s;%s;%d;%s;%s;%s;%d;%s;%s\n",
 		ts,
-		"",             // killer alliance
-		ev.KillerGuild, // killer guild
-		ev.KillerName,  // killer name
-		"__DEATH__",    // item_id sentinel
-		"__DEATH__",    // item_name sentinel
+		"",                           // killer alliance
+		lootLogField(ev.KillerGuild), // killer guild
+		lootLogField(ev.KillerName),  // killer name
+		"__DEATH__",                  // item_id sentinel
+		"__DEATH__",                  // item_name sentinel
 		1,
-		"",             // victim alliance
-		ev.VictimGuild, // victim guild
-		ev.VictimName,  // victim name
-		0,              // numeric_id — N/A for deaths
+		"",                           // victim alliance
+		lootLogField(ev.VictimGuild), // victim guild
+		lootLogField(ev.VictimName),  // victim name
+		0,                            // numeric_id — N/A for deaths
+		lootLogField(ev.Location),
+		lootLogField(equipmentJSON),
 	)
 	// Deaths are rare (compared to loot) but we still let flushLoop handle
 	// persistence — the VPS relay path already has the event in-flight.

@@ -1,3 +1,10 @@
 # Coldtouch Market Analyzer - Custom Data Client Config
 # Get your capture token from your Profile page at https://coldtouch.github.io/coldtouch-market-analyzer/
 CaptureToken: "YOUR_CAPTURE_TOKEN_HERE"
+
+# Chest-log filter mapping for Loot Logger accountability.
+# Leave ChestLogActionMappingVerified false until you have run a controlled
+# in-game test where one known item is deposited and one is withdrawn.
+ChestLogDepositFilterValue: 28
+ChestLogWithdrawFilterValue: 1
+ChestLogActionMappingVerified: false

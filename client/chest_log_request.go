@@ -125,17 +125,15 @@ func recordChestLogRequestFilter(opID int16, filterValue int) {
 
 // resolveChestLogAction returns (filterValue, actionTag) for a response opID.
 // filterValue is -1 when no matching request was recorded. actionTag is a
-// human-readable label derived from the filter value — our current best guess
-// based on the first mixed capture (2026-04-20):
+// human-readable label derived from the configured filter mapping:
 //
-//	1   → "withdraw"  (conjectured; fires first when Log tab opens)
-//	28  → "deposit"   (conjectured; fires after withdraw filter)
+//	default 1   → "withdraw"
+//	default 28  → "deposit"
 //	other/unknown → "filter_<n>"
 //
-// Both guesses will get verified once we have a capture where the human
-// operator wrote down which filter they toggled. Until then, the raw
-// filter_value column in the TSV lets us flip the mapping without another code
-// round-trip.
+// The website only treats these rows as verified ground truth when
+// ChestLogActionMappingVerified is true. Until a controlled in-game check is
+// done, the raw filter_value column lets us flip the mapping through config.
 func resolveChestLogAction(opID int16) (int, string) {
 	chestLogReqMu.Lock()
 	defer chestLogReqMu.Unlock()
@@ -145,9 +143,9 @@ func resolveChestLogAction(opID int16) (int, string) {
 	}
 	delete(chestLogReqIndex, opID) // consume — responses are one-to-one with requests
 	switch entry.filterValue {
-	case 1:
+	case ConfigGlobal.ChestLogWithdrawFilterValue:
 		return entry.filterValue, "withdraw"
-	case 28:
+	case ConfigGlobal.ChestLogDepositFilterValue:
 		return entry.filterValue, "deposit"
 	default:
 		return entry.filterValue, "filter_unknown"

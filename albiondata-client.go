@@ -56,6 +56,7 @@ func main() {
 		client.CloseLootFile()
 		client.CloseChestLogFile()
 		client.CloseUnknownLogger()
+		client.CloseTradeLogger()
 		os.Exit(0)
 	}()
 
@@ -71,8 +72,11 @@ func main() {
 	}
 
 	// Also close if Run() returns normally
+	client.StopVPSRelay()
 	client.CloseLootFile()
+	client.CloseChestLogFile()
 	client.CloseUnknownLogger()
+	client.CloseTradeLogger()
 }
 
 func runClient() {

@@ -1,12 +1,15 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +32,7 @@ type VPSRelay struct {
 	ctx         context.Context
 	ctxCancel   context.CancelFunc
 	pendingMsgs [][]byte // bounded queue for messages during disconnect
+	spoolPath   string   // durable snapshot of pendingMsgs across clean/crash restarts
 }
 
 // relayBufPool is used by buildRelayMessage to avoid allocating a fresh
@@ -81,9 +85,9 @@ func newSessionUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-// maxPendingMsgs caps the offline queue. 500 entries covers a guild vault bulk
-// open (100 tabs × a few seconds of disconnect) without unbounded growth (GC-6).
-const maxPendingMsgs = 500
+// maxPendingMsgs caps the offline queue. The durable spool keeps the same cap so
+// outage recovery remains bounded while still covering large ZvZ/chest-log bursts.
+const maxPendingMsgs = 5000
 
 // wsDialer uses an explicit handshake timeout so a slow or unresponsive VPS
 // does not block indefinitely (GC-7).
@@ -117,17 +121,93 @@ func InitVPSRelay(captureToken string) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	spoolPath := relaySpoolPath()
+	pending := loadRelaySpool(spoolPath)
 	vpsRelay = &VPSRelay{
-		url:       url,
-		token:     captureToken,
-		sessionID: newSessionUUID(),
-		stopCh:    make(chan struct{}),
-		ctx:       ctx,
-		ctxCancel: cancel,
+		url:         url,
+		token:       captureToken,
+		sessionID:   newSessionUUID(),
+		stopCh:      make(chan struct{}),
+		ctx:         ctx,
+		ctxCancel:   cancel,
+		pendingMsgs: pending,
+		spoolPath:   spoolPath,
 	}
 
 	go vpsRelay.connectLoop()
+	if len(pending) > 0 {
+		log.Infof("[VPSRelay] Loaded %d pending message(s) from durable spool", len(pending))
+	}
 	log.Infof("[VPSRelay] Initialized — will relay chest captures to %s (sessionID=%s)", vpsRelay.url, vpsRelay.sessionID)
+}
+
+func relaySpoolPath() string {
+	logsDir := "logs"
+	if exePath, err := os.Executable(); err == nil {
+		logsDir = filepath.Join(filepath.Dir(exePath), "logs")
+	}
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		logsDir = "logs"
+		_ = os.MkdirAll(logsDir, 0755)
+	}
+	return filepath.Join(logsDir, "vps-relay-pending.jsonl")
+}
+
+func loadRelaySpool(path string) [][]byte {
+	if path == "" {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	var msgs [][]byte
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		msg := make([]byte, len(line))
+		copy(msg, line)
+		msgs = append(msgs, msg)
+		if len(msgs) > maxPendingMsgs {
+			msgs = msgs[len(msgs)-maxPendingMsgs:]
+		}
+	}
+	if err := sc.Err(); err != nil {
+		log.Warnf("[VPSRelay] Failed to read durable spool: %v", err)
+	}
+	return msgs
+}
+
+func (r *VPSRelay) persistPendingSnapshotLocked() {
+	if r.spoolPath == "" {
+		return
+	}
+	if len(r.pendingMsgs) == 0 {
+		_ = os.Remove(r.spoolPath)
+		return
+	}
+	var buf bytes.Buffer
+	for _, msg := range r.pendingMsgs {
+		if len(msg) == 0 {
+			continue
+		}
+		buf.Write(bytes.TrimSpace(msg))
+		buf.WriteByte('\n')
+	}
+	tmp := r.spoolPath + ".tmp"
+	if err := os.WriteFile(tmp, buf.Bytes(), 0600); err != nil {
+		log.Warnf("[VPSRelay] Failed to write durable spool: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, r.spoolPath); err != nil {
+		log.Warnf("[VPSRelay] Failed to rotate durable spool: %v", err)
+	}
 }
 
 // connectLoop retries connect() with exponential backoff + jitter (GO-H2).
@@ -175,6 +255,7 @@ func StopVPSRelay() {
 		vpsRelay.ctxCancel() // unblocks any pending reads via conn.Close below
 		close(vpsRelay.stopCh)
 		vpsRelay.mu.Lock()
+		vpsRelay.persistPendingSnapshotLocked()
 		if vpsRelay.conn != nil {
 			vpsRelay.conn.Close()
 		}
@@ -193,6 +274,7 @@ func (r *VPSRelay) sendOrQueue(msgJSON []byte) bool {
 		r.mu.Lock()
 		if len(r.pendingMsgs) < maxPendingMsgs {
 			r.pendingMsgs = append(r.pendingMsgs, msgJSON)
+			r.persistPendingSnapshotLocked()
 			log.Debugf("[VPSRelay] Queued message (%d pending)", len(r.pendingMsgs))
 		} else {
 			log.Warnf("[VPSRelay] Queue full (%d msgs) — dropping message", maxPendingMsgs)
@@ -208,6 +290,7 @@ func (r *VPSRelay) sendOrQueue(msgJSON []byte) bool {
 	if !r.connected.Load() || r.conn == nil {
 		if len(r.pendingMsgs) < maxPendingMsgs {
 			r.pendingMsgs = append(r.pendingMsgs, msgJSON)
+			r.persistPendingSnapshotLocked()
 		}
 		return false
 	}
@@ -217,6 +300,7 @@ func (r *VPSRelay) sendOrQueue(msgJSON []byte) bool {
 		r.connected.Store(false)
 		if len(r.pendingMsgs) < maxPendingMsgs {
 			r.pendingMsgs = append(r.pendingMsgs, msgJSON)
+			r.persistPendingSnapshotLocked()
 		}
 		return false
 	}
@@ -259,10 +343,16 @@ func (r *VPSRelay) flushPending() {
 				combined = combined[len(combined)-maxPendingMsgs:]
 			}
 			r.pendingMsgs = combined
+			r.persistPendingSnapshotLocked()
 			r.mu.Unlock()
 			break
 		}
 		sent++
+	}
+	if sent == len(toSend) {
+		r.mu.Lock()
+		r.persistPendingSnapshotLocked()
+		r.mu.Unlock()
 	}
 	if sent > 0 {
 		log.Infof("[VPSRelay] Flushed %d queued messages", sent)
@@ -436,10 +526,11 @@ func SendLootEvent(lootEvent *LootEvent) {
 // opcode 157). Sent to the VPS so the website can display per-player deposit
 // ground truth alongside the existing pickup-based accountability flow.
 type ChestLogBatch struct {
-	CapturedAt  int64           `json:"capturedAt"`  // Unix millis — when our client received the response
-	Action      string          `json:"action"`      // "deposit" | "withdraw" | "unpaired" | "filter_unknown"
-	FilterValue int             `json:"filterValue"` // raw REQUEST param 6 (1 or 28), kept for debugging
-	Entries     []ChestLogEntry `json:"entries"`
+	CapturedAt            int64           `json:"capturedAt"`            // Unix millis — when our client received the response
+	Action                string          `json:"action"`                // "deposit" | "withdraw" | "unpaired" | "filter_unknown"
+	FilterValue           int             `json:"filterValue"`           // raw REQUEST param 6, kept for debugging
+	ActionMappingVerified bool            `json:"actionMappingVerified"` // true only after a controlled deposit/withdraw check
+	Entries               []ChestLogEntry `json:"entries"`
 }
 
 // SendChestLogBatch streams one chest-log response's entries to the VPS.

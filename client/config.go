@@ -74,15 +74,20 @@ type config struct {
 	VPSRelayURL                    string // WebSocket URL for the VPS relay (default: wss://albionaitool.xyz)
 	ConfigDir                      string // Directory to search for config.yaml (--config-dir flag)
 	LogUnknownEvents               bool   // When true, writes unrecognised opcodes to logs/unknown-events-<ts>.log for reverse-engineering
+	ChestLogDepositFilterValue     int    // REQUEST 157 param 6 value that maps to deposits
+	ChestLogWithdrawFilterValue    int    // REQUEST 157 param 6 value that maps to withdrawals
+	ChestLogActionMappingVerified  bool   // True after a controlled in-game deposit/withdraw mapping check
 }
 
 // config global config data
 var ConfigGlobal = &config{
-	LogLevel:          "INFO",
-	CaptureEnabled:    true,
-	LogUnknownEvents:  false,
-	UpdateGithubOwner: "coldtouch",
-	UpdateGithubRepo:  "albiondata-client"}
+	LogLevel:                    "INFO",
+	CaptureEnabled:              true,
+	LogUnknownEvents:            false,
+	ChestLogDepositFilterValue:  28,
+	ChestLogWithdrawFilterValue: 1,
+	UpdateGithubOwner:           "coldtouch",
+	UpdateGithubRepo:            "albiondata-client"}
 
 func (config *config) SetupFlags() {
 	config.setupWebsocketFlags()
@@ -90,6 +95,7 @@ func (config *config) SetupFlags() {
 	config.setupCommonFlags()
 
 	flag.Parse()
+	config.applyConfigFileOverridesAfterFlags()
 
 	if config.OfflinePath != "" {
 		config.Offline = true
@@ -113,6 +119,37 @@ func (config *config) SetupFlags() {
 	}
 
 	config.setupLogs()
+}
+
+func flagWasProvided(name string) bool {
+	seen := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			seen = true
+		}
+	})
+	return seen
+}
+
+func (config *config) applyConfigFileOverridesAfterFlags() {
+	if !flagWasProvided("capture") && viper.IsSet("CaptureEnabled") {
+		config.CaptureEnabled = viper.GetBool("CaptureEnabled")
+	}
+	if !flagWasProvided("vps-url") && viper.IsSet("VPSRelayURL") {
+		config.VPSRelayURL = viper.GetString("VPSRelayURL")
+	}
+	if !flagWasProvided("log-unknown-events") && viper.IsSet("LogUnknownEvents") {
+		config.LogUnknownEvents = viper.GetBool("LogUnknownEvents")
+	}
+	if !flagWasProvided("chest-log-deposit-filter") && viper.IsSet("ChestLogDepositFilterValue") {
+		config.ChestLogDepositFilterValue = viper.GetInt("ChestLogDepositFilterValue")
+	}
+	if !flagWasProvided("chest-log-withdraw-filter") && viper.IsSet("ChestLogWithdrawFilterValue") {
+		config.ChestLogWithdrawFilterValue = viper.GetInt("ChestLogWithdrawFilterValue")
+	}
+	if !flagWasProvided("chest-log-mapping-verified") && viper.IsSet("ChestLogActionMappingVerified") {
+		config.ChestLogActionMappingVerified = viper.GetBool("ChestLogActionMappingVerified")
+	}
 }
 
 // preParseConfigDir scans os.Args for --config-dir before flag.Parse() runs,
@@ -170,6 +207,16 @@ func (config *config) setupWebsocketFlags() {
 	// Load unknown-events logger setting (defaults to false)
 	if viper.IsSet("LogUnknownEvents") {
 		config.LogUnknownEvents = viper.GetBool("LogUnknownEvents")
+	}
+
+	if viper.IsSet("ChestLogDepositFilterValue") {
+		config.ChestLogDepositFilterValue = viper.GetInt("ChestLogDepositFilterValue")
+	}
+	if viper.IsSet("ChestLogWithdrawFilterValue") {
+		config.ChestLogWithdrawFilterValue = viper.GetInt("ChestLogWithdrawFilterValue")
+	}
+	if viper.IsSet("ChestLogActionMappingVerified") {
+		config.ChestLogActionMappingVerified = viper.GetBool("ChestLogActionMappingVerified")
 	}
 
 	// Allow config.yaml to override the VPS relay URL (GO-L1)
@@ -335,6 +382,27 @@ func (config *config) setupCommonFlags() {
 		"log-unknown-events",
 		false,
 		"Write unrecognised opcodes to logs/unknown-events-<ts>.log for reverse-engineering. Use during PvP to discover events the client doesn't handle yet.",
+	)
+
+	flag.IntVar(
+		&config.ChestLogDepositFilterValue,
+		"chest-log-deposit-filter",
+		28,
+		"REQUEST 157 param 6 value that maps chest-log responses to deposits.",
+	)
+
+	flag.IntVar(
+		&config.ChestLogWithdrawFilterValue,
+		"chest-log-withdraw-filter",
+		1,
+		"REQUEST 157 param 6 value that maps chest-log responses to withdrawals.",
+	)
+
+	flag.BoolVar(
+		&config.ChestLogActionMappingVerified,
+		"chest-log-mapping-verified",
+		false,
+		"Mark chest-log deposit/withdraw filter mapping as verified after a controlled in-game check.",
 	)
 }
 

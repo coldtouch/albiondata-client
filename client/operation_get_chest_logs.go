@@ -49,9 +49,9 @@ type operationGetChestLogsResponse struct {
 
 // ChestLogEntry is one decoded row from the chest log response.
 type ChestLogEntry struct {
-	Timestamp   int64  `json:"timestamp"`    // Unix millis
+	Timestamp   int64  `json:"timestamp"` // Unix millis
 	PlayerName  string `json:"playerName"`
-	ItemID      string `json:"itemId"`       // Resolved via itemmap; empty if unknown
+	ItemID      string `json:"itemId"` // Resolved via itemmap; empty if unknown
 	NumericID   int    `json:"numericId"`
 	Quality     int    `json:"quality"`
 	Quantity    int    `json:"quantity"`
@@ -133,8 +133,8 @@ func (op operationGetChestLogsResponse) Process(state *albionState) {
 		})
 	}
 
-	log.Infof("[ChestLog] Decoded %d entries (opID=%d action=%s filter=%d)",
-		len(entries), op.OpID, actionTag, filterValue)
+	log.Infof("[ChestLog] Decoded %d entries (opID=%d action=%s filter=%d mappingVerified=%t)",
+		len(entries), op.OpID, actionTag, filterValue, ConfigGlobal.ChestLogActionMappingVerified)
 	if len(entries) > 0 {
 		first := entries[0]
 		log.Infof("[ChestLog]   first: %s · %s q%d ×%d · %s · action=%s",
@@ -153,10 +153,11 @@ func (op operationGetChestLogsResponse) Process(state *albionState) {
 	// Stream to VPS so the website can render per-player deposit ground truth
 	// and cross-check against pickup events for accountability verification.
 	SendChestLogBatch(&ChestLogBatch{
-		CapturedAt:  time.Now().UnixMilli(),
-		Action:      actionTag,
-		FilterValue: filterValue,
-		Entries:     entries,
+		CapturedAt:            time.Now().UnixMilli(),
+		Action:                actionTag,
+		FilterValue:           filterValue,
+		ActionMappingVerified: ConfigGlobal.ChestLogActionMappingVerified,
+		Entries:               entries,
 	})
 }
 
