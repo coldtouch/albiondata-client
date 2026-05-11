@@ -104,7 +104,8 @@ func (u *httpUploaderPow) uploadWithPow(pow Pow, solution string, natsmsg []byte
 	if resp.StatusCode != 200 {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			log.Fatal(err)
+			log.Errorf("Could not read pow error response body: %v", err)
+			return
 		}
 		log.Errorf("HTTP Error while proving pow. returned: %v (%v)", resp.StatusCode, string(body))
 		return
@@ -115,11 +116,11 @@ func (u *httpUploaderPow) uploadWithPow(pow Pow, solution string, natsmsg []byte
 
 // Generates a random hex string e.g.: faa2743d9181dca5
 func randomHex(n int) string {
-    b := make([]byte, n)
-    rand.Read(b)
-    dst := make([]byte, n*2)
-    hex.Encode(dst, b)
-    return string(dst)
+	b := make([]byte, n)
+	rand.Read(b)
+	dst := make([]byte, n*2)
+	hex.Encode(dst, b)
+	return string(dst)
 }
 
 // Converts a string to bits e.g.: 0110011...

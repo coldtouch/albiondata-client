@@ -22,9 +22,10 @@ type VPSRelay struct {
 	conn        *websocket.Conn
 	url         string
 	token       string
-	sessionID   string // UUID per game run — survives WS reconnects so loot events don't fragment
-	connected   atomic.Bool // lock-free read for the send fast-path (ZvZ hot path)
+	sessionID   string        // UUID per game run — survives WS reconnects so loot events don't fragment
+	connected   atomic.Bool   // lock-free read for the send fast-path (ZvZ hot path)
 	stopCh      chan struct{} // signals connectLoop to stop
+	stopOnce    sync.Once
 	ctx         context.Context
 	ctxCancel   context.CancelFunc
 	pendingMsgs [][]byte // bounded queue for messages during disconnect
@@ -170,13 +171,15 @@ func StopVPSRelay() {
 	if vpsRelay == nil {
 		return
 	}
-	vpsRelay.ctxCancel() // unblocks any pending reads via conn.Close below
-	close(vpsRelay.stopCh)
-	vpsRelay.mu.Lock()
-	if vpsRelay.conn != nil {
-		vpsRelay.conn.Close()
-	}
-	vpsRelay.mu.Unlock()
+	vpsRelay.stopOnce.Do(func() {
+		vpsRelay.ctxCancel() // unblocks any pending reads via conn.Close below
+		close(vpsRelay.stopCh)
+		vpsRelay.mu.Lock()
+		if vpsRelay.conn != nil {
+			vpsRelay.conn.Close()
+		}
+		vpsRelay.mu.Unlock()
+	})
 }
 
 // sendOrQueue sends a message immediately if connected, otherwise queues it for retry.

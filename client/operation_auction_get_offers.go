@@ -78,7 +78,8 @@ func (op operationAuctionGetOffersResponse) Process(state *albionState) {
 		var marketOrder map[string]interface{}
 		err2 := json.Unmarshal([]byte(v), &marketOrder)
 		if err2 != nil {
-			log.Fatal(err2)
+			log.Errorf("Could not decode market order payload: %v", err2)
+			continue
 		}
 
 		// Pull the location
