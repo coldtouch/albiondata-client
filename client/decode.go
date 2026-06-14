@@ -170,6 +170,8 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		operation = &operationContainerOpen{}
 	case opContainerManageSubContainer:
 		operation = &operationContainerManageSubContainer{}
+	case opInventoryMoveItem, opInventoryMoveItem + 1:
+		operation = &operationInventoryMoveItem{}
 
 	// === TRADE TRACKING (private VPS only — does NOT affect AODP uploads) ===
 	case opAuctionBuyOffer:
@@ -208,6 +210,8 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 			operation = &operationContainerOpen{}
 		case opContainerManageSubContainer:
 			operation = &operationContainerManageSubContainer{}
+		case opInventoryMoveItem:
+			operation = &operationInventoryMoveItem{}
 		case opAuctionBuyOffer:
 			operation = &operationAuctionBuyOfferRequest{}
 		case opAuctionCreateOffer:
@@ -245,13 +249,14 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 
 	switch OperationType(code) {
 	case opJoin:
+		dumpJoinParams("RESPONSE opJoin (raw)", code, params)
 		operation = &operationJoinResponse{}
 	case opChangeCluster:
 		// Zone-transition response — fires every time the player crosses a
 		// cluster boundary (walking out of hideout, traversing portals, etc.).
-		// Without this, currentZone only updated on initial connect, so any
-		// in-session zone change went silent — meaning loot/death events fired
-		// in subsequent zones still carried the connect-time location.
+		// Diag dump captures the params so we can verify which index carries
+		// the destination zone identifier (best guess: 67, same as opJoin).
+		dumpJoinParams("RESPONSE opChangeCluster (raw)", code, params)
 		operation = &operationChangeClusterResponse{}
 	case opAuctionGetOffers:
 		operation = &operationAuctionGetOffersResponse{}
@@ -301,8 +306,10 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		// Try shifted code (-6) for operations that moved in the April 2026 update
 		switch OperationType(shifted) {
 		case opJoin:
+			dumpJoinParams("RESPONSE opJoin (shifted)", code, params)
 			operation = &operationJoinResponse{}
 		case opChangeCluster:
+			dumpJoinParams("RESPONSE opChangeCluster (shifted)", code, params)
 			operation = &operationChangeClusterResponse{}
 		case opAuctionGetOffers:
 			operation = &operationAuctionGetOffersResponse{}
@@ -371,6 +378,8 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventNewSimpleItem{}
 	case evNewEquipmentItem:
 		event = &eventNewEquipmentItem{}
+	case evNewLoot:
+		event = &eventNewLoot{}
 	case evInventoryPutItem:
 		// Short-circuit: handler is intentionally a no-op, so skip the entire
 		// decodeParams pipeline (mapstructure.NewDecoder + map[string]interface{}
@@ -397,6 +406,8 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventAttachItemContainer{}
 	case evAttachItemContainer + 2: // April 2026 update shifted +2
 		event = &eventAttachItemContainer{}
+	case evDetachItemContainer:
+		event = &eventDetachItemContainer{}
 	case evDied:
 		event = &eventDied{}
 	case evDied + 2: // April 2026 update shifted +2
@@ -409,6 +420,32 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventCharacterEquipmentChanged{}
 	case evCharacterEquipmentChanged + 2: // April 2026 update shifted +2 (precaution)
 		event = &eventCharacterEquipmentChanged{}
+	case evInvitationPlayerTrade, evPlayerTradeStart, evPlayerTradeCancel,
+		evPlayerTradeUpdate, evPlayerTradeFinished, evPlayerTradeAcceptChange,
+		evPlayerTradeFinished + 2, evPlayerTradeAcceptChange + 2:
+		// Player-trade event bus. Wire format reverse-engineered 2026-04-25;
+		// April 2026 protocol shifted these +2 so the actual codes seen on-wire
+		// are 176-181 (covered by base 174-179 cases plus the two +2 extensions
+		// below; the middle +2 codes collide with later base events).
+		//
+		// Two consumers:
+		//   1. recordTradeEvent — raw dumper to logs/trade-debug-<ts>.log
+		//      (kept as a safety net for protocol shifts / unknown variants).
+		//   2. trade_tracker — typed state machine that emits structured
+		//      "[Trade] completed tradeID=… partner=… local_gave=… …" lines
+		//      to the main log. Future consumer of WS-relay upload.
+		recordTradeEvent(eventType, params)
+		switch eventType {
+		case 176:
+			handleTradeInvitation(params)
+		case 179:
+			handleTradeUpdate(params)
+		case 181:
+			handleTradeAcceptChange(params)
+		case 178, 180:
+			handleTradeEnd(params, eventType)
+		}
+		return nil, nil
 	default:
 		log.Debugf("[Decode] Unhandled event code: %d (params: %d)", eventType, len(params))
 		recordUnknownEvent("EVENT", eventType, params)

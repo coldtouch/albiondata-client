@@ -2,6 +2,7 @@
 _vendor-[0-9]*
 .vscode/
 *.exe
+*.exe~
 *.gz
 *.zip
 *.pcap
@@ -17,5 +18,6 @@ buildall.sh
 run.sh
 *.log
 *.log.*
-
-
+logs/
+.claude/
+.gocache/

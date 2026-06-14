@@ -15,8 +15,9 @@ import (
 // Confirmed via [ZONE-DIAG] dump on 2026-04-27 (walk hideout → open world → hideout):
 //   - Open-world destination: param 0 = "3312" (numeric zone ID only)
 //   - Hideout destination:    param 0 = "@HIDEOUT@3312@<UUID>"
-//                             param 1 = "HIDEOUT-0001b" (hideout instance code)
-//                             param 2 = "Saggin" (owner guild)
+//     param 1 = "HIDEOUT-0001b" (hideout instance code)
+//     param 2 = "Saggin" (owner guild)
+//
 // Param 0 is always present and always the destination cluster identifier.
 // The format mirrors what we already emit elsewhere (OpJoin's @HIDEOUT@ strings
 // for hideouts, raw zone IDs for open world). Downstream lookup of zone IDs
@@ -30,6 +31,8 @@ func (op operationChangeClusterResponse) Process(state *albionState) {
 	if op.Location == "" {
 		return
 	}
+	ClearItemCache()
+	ClearLootContainerCache()
 	log.Infof("[ChangeCluster] Updating player location to %v.", op.Location)
 	state.SetLocationId(op.Location)
 	state.SetCurrentZone(op.Location)

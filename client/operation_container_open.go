@@ -64,15 +64,16 @@ func (op operationContainerOpenResponse) Process(state *albionState) {}
 //	3: slot map ([]int) — globalSlotIds for items in this tab. 0 = empty slot.
 //	4: capacity (int)
 type eventAttachItemContainer struct {
-	ContainerSlot int        `mapstructure:"0"`
-	ContainerGUID []int8     `mapstructure:"1"`
-	TabGUID       []int8     `mapstructure:"2"`
-	SlotMap       []int      `mapstructure:"3"`
-	Capacity      int        `mapstructure:"4"`
+	ContainerSlot int    `mapstructure:"0"`
+	ContainerGUID []int8 `mapstructure:"1"`
+	TabGUID       []int8 `mapstructure:"2"`
+	SlotMap       []int  `mapstructure:"3"`
+	Capacity      int    `mapstructure:"4"`
 }
 
 func (ev eventAttachItemContainer) Process(state *albionState) {
 	guid := guidHex(ev.TabGUID)
+	containerGUID := guidHex(ev.ContainerGUID)
 
 	// Count non-zero slots
 	nonZero := 0
@@ -84,6 +85,8 @@ func (ev eventAttachItemContainer) Process(state *albionState) {
 
 	log.Debugf("[AttachItemContainer] slot=%d tabGuid=%s slots=%d/%d capacity=%d",
 		ev.ContainerSlot, guid, nonZero, len(ev.SlotMap), ev.Capacity)
+
+	attachLootContainerItems(ev.ContainerSlot, []string{containerGUID, guid}, ev.SlotMap)
 
 	if !ConfigGlobal.CaptureEnabled {
 		log.Debug("[AttachItemContainer] Capture disabled — ignoring")
@@ -113,8 +116,8 @@ func (ev eventAttachItemContainer) Process(state *albionState) {
 // operationContainerManageSubContainer — player switching tabs in a chest.
 // Logged for debugging; actual capture happens in evAttachItemContainer.
 type operationContainerManageSubContainer struct {
-	ContainerSlot int8   `mapstructure:"0"`
-	ContainerGUID []int8 `mapstructure:"2"`
+	ContainerSlot int8                   `mapstructure:"0"`
+	ContainerGUID []int8                 `mapstructure:"2"`
 	RawParams     map[string]interface{} `mapstructure:",remain"`
 }
 

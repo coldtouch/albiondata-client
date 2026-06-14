@@ -1,7 +1,6 @@
 package client
 
 import (
-
 	"github.com/ao-data/albiondata-client/lib"
 	"github.com/ao-data/albiondata-client/log"
 )
@@ -37,6 +36,7 @@ func (op operationJoinResponse) Process(state *albionState) {
 
 	// Clear item cache on zone change to prevent unbounded memory growth
 	ClearItemCache()
+	ClearLootContainerCache()
 
 	log.Infof("Updating player location to %v.", op.Location)
 	state.SetLocationId(op.Location)

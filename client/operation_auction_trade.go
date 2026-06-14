@@ -82,9 +82,16 @@ func (op operationAuctionCreateOfferRequest) Process(state *albionState) {
 	itemID := "unknown"
 	quality := 1
 	if val, ok := globalItemCache.Load(int(op.SlotID)); ok {
-		item := val.(CapturedItem)
-		itemID = item.ItemID
-		quality = item.Quality
+		switch entry := val.(type) {
+		case cachedItemEntry:
+			itemID = entry.item.ItemID
+			quality = entry.item.Quality
+		case CapturedItem:
+			itemID = entry.ItemID
+			quality = entry.Quality
+		default:
+			log.Debugf("[Trade] Listing slot %d has unexpected cache type %T", op.SlotID, val)
+		}
 	}
 
 	total := price * qty
