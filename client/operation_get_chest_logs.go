@@ -98,11 +98,23 @@ func (op operationGetChestLogsResponse) Process(state *albionState) {
 		return
 	}
 
-	// Pair with the originating request to learn the action filter. OpID is
-	// the Photon invocation counter and is shared by request + response.
-	filterValue, actionTag := resolveChestLogAction(op.OpID)
+	// param 6 filter is kept only for logging/diagnostics. Direction is NO LONGER
+	// inferred from it — see below.
+	filterValue, _ := resolveChestLogAction(op.OpID)
 
-	entries := make([]ChestLogEntry, 0, n)
+	// param 3 (Quantities) is SIGNED: positive = deposit (added to chest),
+	// negative = withdraw (removed). This per-row sign is the AUTHORITATIVE
+	// direction — the same signal the in-game "Copy to clipboard" exposes in its
+	// Amount column. The previous code normalized qty<1 → 1, destroying the sign,
+	// then inferred deposit/withdraw from the request's filter code (28/1). That
+	// filter only covers the Deposit and Withdraw views; the "All" view sends a
+	// different code, so whole pages came back tagged "filter_unknown" and the
+	// website dropped them. Deriving direction from the sign makes the filter code
+	// irrelevant: every page resolves cleanly, and a mixed "All" page is split into
+	// a deposit batch + a withdraw batch. No more filter_unknown, nothing dropped.
+	allEntries := make([]ChestLogEntry, 0, n)
+	depEntries := make([]ChestLogEntry, 0, n)
+	wdrEntries := make([]ChestLogEntry, 0, n)
 	for i := 0; i < n; i++ {
 		numericID := int(op.ItemTypeIDs[i])
 		itemName := ""
@@ -113,14 +125,19 @@ func (op operationGetChestLogsResponse) Process(state *albionState) {
 		if i < len(op.ExtraStr) {
 			extra = op.ExtraStr[i]
 		}
-		// Game logs withdrawals of non-stackable gear as qty=-1 (no stack-size
-		// concept on unique instances). Normalize to 1 so downstream code
-		// doesn't need to special-case the sentinel.
-		qty := int(op.Quantities[i])
+		rawQty := int(op.Quantities[i])
+		action := "deposit"
+		if rawQty < 0 {
+			action = "withdraw"
+		}
+		qty := rawQty
+		if qty < 0 {
+			qty = -qty
+		}
 		if qty < 1 {
 			qty = 1
 		}
-		entries = append(entries, ChestLogEntry{
+		e := ChestLogEntry{
 			Timestamp:   ticksToUnixMillis(op.TimestampsT[i]),
 			PlayerName:  op.PlayerNames[i],
 			ItemID:      itemName,
@@ -128,37 +145,45 @@ func (op operationGetChestLogsResponse) Process(state *albionState) {
 			Quality:     int(op.Qualities[i]),
 			Quantity:    qty,
 			Extra:       extra,
-			Action:      actionTag,
+			Action:      action,
 			FilterValue: filterValue,
-		})
+		}
+		allEntries = append(allEntries, e)
+		if action == "withdraw" {
+			wdrEntries = append(wdrEntries, e)
+		} else {
+			depEntries = append(depEntries, e)
+		}
 	}
 
-	log.Infof("[ChestLog] Decoded %d entries (opID=%d action=%s filter=%d mappingVerified=%t)",
-		len(entries), op.OpID, actionTag, filterValue, ConfigGlobal.ChestLogActionMappingVerified)
-	if len(entries) > 0 {
-		first := entries[0]
-		log.Infof("[ChestLog]   first: %s · %s q%d ×%d · %s · action=%s",
-			first.PlayerName,
-			first.ItemID,
-			first.Quality,
-			first.Quantity,
-			time.UnixMilli(first.Timestamp).UTC().Format(time.RFC3339),
-			first.Action,
-		)
-	}
+	log.Infof("[ChestLog] Decoded %d entries (opID=%d filter=%d) — %d deposits, %d withdrawals (direction from signed qty)",
+		len(allEntries), op.OpID, filterValue, len(depEntries), len(wdrEntries))
 
 	// Local TSV for debugging / offline analysis
-	chestLogWriter.append(entries)
+	chestLogWriter.append(allEntries)
 
-	// Stream to VPS so the website can render per-player deposit ground truth
-	// and cross-check against pickup events for accountability verification.
-	SendChestLogBatch(&ChestLogBatch{
-		CapturedAt:            time.Now().UnixMilli(),
-		Action:                actionTag,
-		FilterValue:           filterValue,
-		ActionMappingVerified: ConfigGlobal.ChestLogActionMappingVerified,
-		Entries:               entries,
-	})
+	// Stream to VPS as clean, sign-derived deposit/withdraw batches. Direction is
+	// authoritative (from the quantity sign), so ActionMappingVerified is always
+	// true and the website never sees a "filter_unknown" batch again.
+	now := time.Now().UnixMilli()
+	if len(depEntries) > 0 {
+		SendChestLogBatch(&ChestLogBatch{
+			CapturedAt:            now,
+			Action:                "deposit",
+			FilterValue:           filterValue,
+			ActionMappingVerified: true,
+			Entries:               depEntries,
+		})
+	}
+	if len(wdrEntries) > 0 {
+		SendChestLogBatch(&ChestLogBatch{
+			CapturedAt:            now,
+			Action:                "withdraw",
+			FilterValue:           filterValue,
+			ActionMappingVerified: true,
+			Entries:               wdrEntries,
+		})
+	}
 }
 
 // === CHEST LOG FILE WRITER ===
