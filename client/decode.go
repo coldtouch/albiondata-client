@@ -4,7 +4,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/ao-data/albiondata-client/lib"
@@ -133,6 +135,96 @@ func dumpParams(label string, code int16, params map[uint8]interface{}) {
 			log.Infof("[TRADE-DIAG]   %d: %T len=%d [%s]", k, v, n, preview)
 		} else {
 			log.Infof("[TRADE-DIAG]   %d: %T = %v", k, v, v)
+		}
+	}
+}
+
+// === OPEN-WORLD RESOURCE DISCOVERY (temporary diagnostic) ===
+// Goal: pin down the exact live opcode the server uses to stream harvestable
+// resource nodes (wood/ore/fiber/rock) and hide-giving animals in the open
+// world, plus the param layout (resource type / tier / enchant / charges).
+//
+// We instrument the whole canonical neighborhood AND the +2-shifted variants
+// (April 2026 protocol shifted events +2) so we catch the live code regardless
+// of the exact shift. Anything we miss still lands in unknown-events-*.log via
+// the existing --log-unknown-events safety net.
+//
+//	38 evNewSimpleHarvestableObject      | 39 evNewSimpleHarvestableObjectList (zone-entry batch)
+//	40 evNewHarvestableObject            | 46 evHarvestableChangeState
+//	47 evMobChangeState                  | 123 evNewMob (hide animals)
+//	(+2 shifted: 40,41,42,48,49,125)
+var resourceDiagCodes = map[int16]string{
+	38:  "evNewSimpleHarvestableObject?",
+	39:  "evNewSimpleHarvestableObjectList?",
+	40:  "evNewHarvestableObject? / evNewSimpleHarvestableObject+2?",
+	41:  "evNewSimpleHarvestableObjectList+2?",
+	42:  "evNewHarvestableObject+2?",
+	46:  "evHarvestableChangeState?",
+	47:  "evMobChangeState?",
+	48:  "evHarvestableChangeState+2?",
+	49:  "evMobChangeState+2?",
+	123: "evNewMob? (hide animal)",
+	124: "evNewMob+1?",
+	125: "evNewMob+2? (hide animal, shifted)",
+}
+
+var (
+	_resourceDiagMu     sync.Mutex
+	_resourceDiagSeen   = map[int16]int{}
+	_resourceDiagFirstN = 8 // full-dump first N of each code, then go quiet
+)
+
+func isResourceDiagCode(code int16) bool {
+	_, ok := resourceDiagCodes[code]
+	return ok
+}
+
+// dumpResourceEvent prints a full, readable param dump for a suspected
+// open-world resource event so we can identify the exact opcode + which param
+// index carries resource type / tier / enchant / charges. Arrays are printed up
+// to 30 elements (parallel arrays line up so type[i]/tier[i]/enchant[i] match).
+func dumpResourceEvent(code int16, params map[uint8]interface{}) {
+	if !ConfigGlobal.Debug && !ConfigGlobal.LogUnknownEvents {
+		return
+	}
+	_resourceDiagMu.Lock()
+	n := _resourceDiagSeen[code] + 1
+	_resourceDiagSeen[code] = n
+	_resourceDiagMu.Unlock()
+	if n > _resourceDiagFirstN {
+		if n%200 == 0 {
+			log.Infof("[RESOURCE-DIAG] raw_code=%d still firing (occurrence %d) — %s", code, n, resourceDiagCodes[code])
+		}
+		return
+	}
+
+	log.Infof("[RESOURCE-DIAG] raw_code=%d  guess=%s  params=%d  (occurrence %d/%d)",
+		code, resourceDiagCodes[code], len(params), n, _resourceDiagFirstN)
+	keys := paramKeys(params)
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	for _, k := range keys {
+		if k == 252 || k == 253 {
+			continue
+		}
+		v := params[k]
+		rv := reflect.ValueOf(v)
+		if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+			ln := rv.Len()
+			cap := ln
+			if cap > 30 {
+				cap = 30
+			}
+			parts := make([]string, 0, cap)
+			for i := 0; i < cap; i++ {
+				parts = append(parts, fmt.Sprintf("%v", rv.Index(i).Interface()))
+			}
+			more := ""
+			if ln > 30 {
+				more = fmt.Sprintf(" …+%d", ln-30)
+			}
+			log.Infof("[RESOURCE-DIAG]   p%d %T len=%d = [%s]%s", k, v, ln, strings.Join(parts, ", "), more)
+		} else {
+			log.Infof("[RESOURCE-DIAG]   p%d %T = %v", k, v, v)
 		}
 	}
 }
@@ -361,18 +453,23 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 	if !ok {
 		return nil, nil
 	}
-	// Events did NOT shift with the April 13 update — only operations shifted +6
+	// Event-code drift history (verified against live enum 2026-07-06):
+	//   - Events ≤171 (our numbering) never shifted — base codes are live.
+	//   - April 13 2026 update inserted 2 events (~172) → +2 for everything above
+	//     (loot 275→277, trades 174-179→176-181, vaults 409/410→411/412).
+	//   - June 29 2026 update inserted 2 more events (between ~181 and 246) →
+	//     +4 total for events ≥246 (loot →279, vaults →413/414, redzone →479).
+	//     Live 277 is now PlayerCounts — decoding it as loot produced the
+	//     UNKNOWN_0 garbage sessions seen July 6.
 
 	switch EventType(eventType) {
 	case evNewCharacter:
 		event = &eventNewCharacter{}
 	case evCharacterStats:
 		event = &eventCharacterStats{}
-	case evCharacterStats + 2: // April 2026 update shifted +2
-		event = &eventCharacterStats{}
-	case evOtherGrabbedLoot + 2: // April 2026 update shifted loot event 275→277
+	case evOtherGrabbedLoot + 4: // live 279 since June 29 2026 update (was 277 Apr-Jun, 275 before)
 		event = &eventOtherGrabbedLoot{}
-	case evRedZoneWorldMapEvent, evRedZoneWorldMapEvent + 2:
+	case evRedZoneWorldMapEvent + 4: // live 479 ("RedZoneWorldEvent") since June 29 2026 update
 		event = &eventRedZoneWorldMapEvent{}
 	case evNewSimpleItem:
 		event = &eventNewSimpleItem{}
@@ -394,31 +491,19 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventNewKillTrophyItem{}
 	case evNewLaborerItem:
 		event = &eventNewLaborerItem{}
-	case evGuildVaultInfo:
+	case evGuildVaultInfo + 4: // live 413 since June 29 2026 update; live 411 is CustomizationChanged — do NOT listen there
 		event = &eventGuildVaultInfo{}
-	case evGuildVaultInfo + 2: // April 2026 update may have shifted +2
-		event = &eventGuildVaultInfo{}
-	case evBankVaultInfo:
-		event = &eventBankVaultInfo{}
-	case evBankVaultInfo + 2: // April 2026 update may have shifted +2
+	case evBankVaultInfo + 4: // live 414 since June 29 2026 update
 		event = &eventBankVaultInfo{}
 	case evAttachItemContainer:
-		event = &eventAttachItemContainer{}
-	case evAttachItemContainer + 2: // April 2026 update shifted +2
 		event = &eventAttachItemContainer{}
 	case evDetachItemContainer:
 		event = &eventDetachItemContainer{}
 	case evDied:
 		event = &eventDied{}
-	case evDied + 2: // April 2026 update shifted +2
-		event = &eventDied{}
 	case evKilledPlayer:
 		event = &eventKilledPlayer{}
-	case evKilledPlayer + 2: // April 2026 update shifted +2
-		event = &eventKilledPlayer{}
 	case evCharacterEquipmentChanged:
-		event = &eventCharacterEquipmentChanged{}
-	case evCharacterEquipmentChanged + 2: // April 2026 update shifted +2 (precaution)
 		event = &eventCharacterEquipmentChanged{}
 	case evInvitationPlayerTrade, evPlayerTradeStart, evPlayerTradeCancel,
 		evPlayerTradeUpdate, evPlayerTradeFinished, evPlayerTradeAcceptChange,
@@ -447,6 +532,11 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		}
 		return nil, nil
 	default:
+		if isResourceDiagCode(eventType) {
+			// Open-world resource discovery: full dump to identify the live opcode
+			// + param layout. Still also recorded in unknown-events for the summary.
+			dumpResourceEvent(eventType, params)
+		}
 		log.Debugf("[Decode] Unhandled event code: %d (params: %d)", eventType, len(params))
 		recordUnknownEvent("EVENT", eventType, params)
 		return nil, nil
