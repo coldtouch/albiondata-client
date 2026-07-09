@@ -77,6 +77,8 @@ type config struct {
 	ChestLogDepositFilterValue     int    // REQUEST 157 param 6 value that maps to deposits
 	ChestLogWithdrawFilterValue    int    // REQUEST 157 param 6 value that maps to withdrawals
 	ChestLogActionMappingVerified  bool   // True after a controlled in-game deposit/withdraw mapping check
+	ListenAllInterfaces            bool   // VPN/ExitLag support: listen on EVERY up adapter (incl. TUN/TAP/virtual)
+	ForceServer                    string // VPN/ExitLag support: pin the game server (west|east|europe) when source IPs are relay IPs
 }
 
 // config global config data
@@ -134,6 +136,12 @@ func flagWasProvided(name string) bool {
 func (config *config) applyConfigFileOverridesAfterFlags() {
 	if !flagWasProvided("capture") && viper.IsSet("CaptureEnabled") {
 		config.CaptureEnabled = viper.GetBool("CaptureEnabled")
+	}
+	if !flagWasProvided("la") && viper.IsSet("ListenAllInterfaces") {
+		config.ListenAllInterfaces = viper.GetBool("ListenAllInterfaces")
+	}
+	if !flagWasProvided("force-server") && viper.IsSet("ForceServer") {
+		config.ForceServer = viper.GetString("ForceServer")
 	}
 	if !flagWasProvided("vps-url") && viper.IsSet("VPSRelayURL") {
 		config.VPSRelayURL = viper.GetString("VPSRelayURL")
@@ -312,6 +320,20 @@ func (config *config) setupCommonFlags() {
 		"l",
 		"",
 		"Listen on this comma separated devices instead of all available. (Windows: Use MAC-Address, Linux: Use interface name)",
+	)
+
+	flag.BoolVar(
+		&config.ListenAllInterfaces,
+		"la",
+		false,
+		"Listen on ALL up network adapters including VPN/TUN/TAP/virtual ones. Use this when playing through ExitLag, NoPing, WTFast or a VPN — game packets often surface on a tunnel adapter the default physical-only filter skips.",
+	)
+
+	flag.StringVar(
+		&config.ForceServer,
+		"force-server",
+		"",
+		"Pin the game server when playing through a VPN/tunnel (source IPs are relay IPs, so auto-detection fails): west, east or europe.",
 	)
 
 	flag.StringVar(

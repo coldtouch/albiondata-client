@@ -213,7 +213,27 @@ func (state *albionState) IsValidLocation() bool {
 	}
 }
 
+// forcedServer maps the -force-server flag to (serverID, ingestBaseURL).
+// Zero value means "not forced".
+func forcedServer() (int, string) {
+	switch strings.ToLower(strings.TrimSpace(ConfigGlobal.ForceServer)) {
+	case "west", "america", "americas", "1":
+		return 1, "https+pow://pow.west.albion-online-data.com"
+	case "east", "asia", "2":
+		return 2, "https+pow://pow.east.albion-online-data.com"
+	case "europe", "eu", "3":
+		return 3, "https+pow://pow.europe.albion-online-data.com"
+	}
+	return 0, ""
+}
+
 func (state *albionState) GetServer() (int, string) {
+	// VPN/ExitLag: packets arrive from relay IPs, so IP-based detection never
+	// matches an Albion range. -force-server pins the answer explicitly.
+	if fid, furl := forcedServer(); fid != 0 {
+		return fid, furl
+	}
+
 	state.mu.RLock()
 	currentServerID := state.AODataServerID
 	currentBaseURL := state.AODataIngestBaseURL

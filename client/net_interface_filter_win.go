@@ -111,6 +111,21 @@ func getAllPhysicalInterface() ([]string, error) {
 		}
 		name := "\\Device\\NPF_" + bytePtrToString(pa.AdapterName)
 
+		// VPN/ExitLag mode (-la): include EVERY up adapter — tunnel/TAP/virtual
+		// included. Decrypted game traffic surfaces on those adapters, and the
+		// default physical-only filter below is exactly why capture went silent
+		// for users playing through ExitLag/NoPing/VPNs. Loopback stays excluded
+		// (npcap loopback needs a special device name and carries no game UDP).
+		// Double-capture is a non-issue in practice: the BPF port-5056 filter
+		// only matches the plaintext side; the physical NIC carries the
+		// encrypted tunnel on other ports.
+		if ConfigGlobal.ListenAllInterfaces {
+			if pa.IfType != uint32(IF_TYPE_SOFTWARE_LOOPBACK) && pa.OperStatus == uint32(IfOperStatusUp) {
+				outInterfaces = append(outInterfaces, name)
+			}
+			continue
+		}
+
 		if pa.IfType != uint32(IF_TYPE_SOFTWARE_LOOPBACK) && pa.IfType != uint32(IF_TYPE_TUNNEL) &&
 			pa.OperStatus == uint32(IfOperStatusUp) && isPhysicalInterface(mac) {
 			outInterfaces = append(outInterfaces, name)

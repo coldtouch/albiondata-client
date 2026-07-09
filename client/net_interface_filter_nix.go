@@ -30,6 +30,13 @@ func getAllPhysicalInterface() ([]string, error) {
        // NO -l option was given, try to find all physical devices
        } else {
                for _, _interface := range interfaces {
+                       // -la: include tunnel/virtual adapters (VPN/ExitLag support)
+                       if ConfigGlobal.ListenAllInterfaces {
+                               if _interface.Flags&net.FlagLoopback == 0 && _interface.Flags&net.FlagUp == 1 {
+                                       outInterfaces = append(outInterfaces, _interface.Name)
+                               }
+                               continue
+                       }
                        if _interface.Flags&net.FlagLoopback == 0 && _interface.Flags&net.FlagUp == 1 && isPhysicalInterface(_interface.HardwareAddr.String()) {
                                outInterfaces = append(outInterfaces, _interface.Name)
                        }
