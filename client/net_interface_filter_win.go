@@ -85,6 +85,22 @@ func cStringToString(cs *uint16) string {
 	return string(utf16.Decode(us))
 }
 
+// getAllUpInterfaces returns EVERY up adapter except software loopback —
+// tunnel/TAP/virtual included. Used by -la and the VPN auto-escalation.
+func getAllUpInterfaces() ([]string, error) {
+	aa, err := adapterAddresses()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, pa := range aa {
+		if pa.IfType != uint32(IF_TYPE_SOFTWARE_LOOPBACK) && pa.OperStatus == uint32(IfOperStatusUp) {
+			out = append(out, "\\Device\\NPF_"+bytePtrToString(pa.AdapterName))
+		}
+	}
+	return out, nil
+}
+
 // Gets all physical interfaces based on filter results, ignoring all VM, Loopback and Tunnel interfaces.
 func getAllPhysicalInterface() ([]string, error) {
 	aa, err := adapterAddresses()

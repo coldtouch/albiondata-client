@@ -177,6 +177,9 @@ func (l *listener) processPacket(packet gopacket.Packet) {
 		return
 	}
 
+	// Confirmed game traffic — feeds the VPN auto-escalation silence check.
+	notePhotonTraffic()
+
 	content, _ := layer.(photon.PhotonLayer)
 
 	for _, command := range content.Commands {

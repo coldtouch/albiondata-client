@@ -1,15 +1,17 @@
 @echo off
 REM ============================================================================
-REM VPN / ExitLag / NoPing / WTFast launcher for the Albion Market Analyzer
-REM client.
+REM VPN / ExitLag / NoPing / WTFast FORCE launcher for the Albion Market
+REM Analyzer client.
 REM
-REM Why this exists: tunneling software moves the game's decrypted UDP traffic
-REM onto a virtual/tunnel network adapter that the client's default
-REM physical-adapters-only capture filter skips — so loot logging, chest
-REM capture and the damage meter go silent. This launcher:
+REM NOTE: since 2026-07-09 the client handles VPNs AUTOMATICALLY — if it sees
+REM no game traffic on the physical adapters within 60s it widens capture to
+REM every adapter on its own, and it remembers your game server from previous
+REM sessions. Normal users can just run the client directly.
+REM
+REM Use this launcher only to FORCE VPN mode immediately (skips the 60s wait)
+REM or when the auto-detection doesn't kick in:
 REM   -la              listens on EVERY up adapter (tunnel/TAP/virtual included)
-REM   -force-server    pins the game server, because with a VPN the packets
-REM                    come from relay IPs and auto-detection can't work
+REM   -force-server    pins the game server explicitly
 REM
 REM Change "europe" to "west" or "east" if you play on those servers.
 REM Run as ADMINISTRATOR (right-click -> Run as administrator).

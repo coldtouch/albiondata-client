@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ao-data/albiondata-client/lib"
@@ -159,23 +160,32 @@ func (state *albionState) SetBanditEventLastTimeSubmitted(v time.Time) {
 // range the existing AODataServerID/URL are left unchanged.
 func (state *albionState) SetServerFromIP(ip string) {
 	state.mu.Lock()
-	defer state.mu.Unlock()
 
 	state.GameServerIP = ip
 
+	matchedID := 0
+	matchedURL := ""
 	switch {
 	case strings.HasPrefix(ip, "5.188.125."):
-		state.AODataServerID = 1
-		state.AODataIngestBaseURL = "https+pow://pow.west.albion-online-data.com"
+		matchedID, matchedURL = 1, "https+pow://pow.west.albion-online-data.com"
 		log.Tracef("SetServerFromIP: west server (ip: %v)", ip)
 	case strings.HasPrefix(ip, "5.45.187."):
-		state.AODataServerID = 2
-		state.AODataIngestBaseURL = "https+pow://pow.east.albion-online-data.com"
+		matchedID, matchedURL = 2, "https+pow://pow.east.albion-online-data.com"
 		log.Tracef("SetServerFromIP: east server (ip: %v)", ip)
 	case strings.HasPrefix(ip, "193.169.238."):
-		state.AODataServerID = 3
-		state.AODataIngestBaseURL = "https+pow://pow.europe.albion-online-data.com"
+		matchedID, matchedURL = 3, "https+pow://pow.europe.albion-online-data.com"
 		log.Tracef("SetServerFromIP: EU server (ip: %v)", ip)
+	}
+	if matchedID != 0 {
+		state.AODataServerID = matchedID
+		state.AODataIngestBaseURL = matchedURL
+	}
+	state.mu.Unlock()
+
+	// Remember positively-identified servers so future VPN sessions (relay
+	// IPs, detection impossible) inherit the right server automatically.
+	if matchedID != 0 {
+		go persistDetectedServer(matchedID, matchedURL)
 	}
 }
 
@@ -278,5 +288,24 @@ func (state *albionState) GetServer() (int, string) {
 		log.Tracef("Returning AODataIngestBaseURL %v (ip src: %v)", aoDataIngestBaseURL, gameIP)
 	}
 
+	// VPN fallback: detection produced nothing (relay IPs never match an
+	// Albion range) — reuse the server persisted from the last non-VPN
+	// session. -force-server (handled above) always wins over this.
+	if serverID == 0 {
+		if pid, purl := loadPersistedServer(); pid != 0 {
+			logServerFallbackOnce(pid)
+			return pid, purl
+		}
+	}
+
 	return serverID, aoDataIngestBaseURL
+}
+
+var _serverFallbackLogged atomic.Bool
+
+func logServerFallbackOnce(id int) {
+	if _serverFallbackLogged.CompareAndSwap(false, true) {
+		names := map[int]string{1: "west", 2: "east", 3: "europe"}
+		log.Infof("[VPN-Auto] Game server not detectable from packet IPs (VPN/tunnel?) — using last known server: %s. Override with -force-server.", names[id])
+	}
 }

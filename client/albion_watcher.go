@@ -1,10 +1,15 @@
 package client
 
 import (
+	"sync"
 	"time"
 
 	"github.com/ao-data/albiondata-client/log"
 )
+
+// vpnEscalateAfterSec: how long the physical adapters may stay silent before
+// capture auto-widens to every up adapter (VPN/ExitLag zero-config support).
+const vpnEscalateAfterSec = 60
 
 type albionProcessWatcher struct {
 	known     []int
@@ -12,6 +17,7 @@ type albionProcessWatcher struct {
 	listeners map[int][]*listener
 	quit      chan bool
 	r         *Router
+	mu        sync.Mutex // guards devices + listeners (escalation goroutine)
 }
 
 func newAlbionProcessWatcher() *albionProcessWatcher {
@@ -31,6 +37,7 @@ func (apw *albionProcessWatcher) run() error {
 	apw.devices = physicalInterfaces
 	log.Debugf("Will listen to these devices: %v", apw.devices)
 	go apw.r.run()
+	go apw.autoEscalateForVPN()
 
 	for {
 		select {
@@ -38,7 +45,10 @@ func (apw *albionProcessWatcher) run() error {
 			apw.closeWatcher()
 			return nil
 		default:
-			if len(apw.listeners) == 0 {
+			apw.mu.Lock()
+			empty := len(apw.listeners) == 0
+			apw.mu.Unlock()
+			if empty {
 				apw.createListeners()
 			}
 			time.Sleep(time.Second)
@@ -46,9 +56,65 @@ func (apw *albionProcessWatcher) run() error {
 	}
 }
 
+// autoEscalateForVPN widens capture to EVERY up adapter when the physical
+// adapters have decoded zero game traffic for vpnEscalateAfterSec. This is
+// the zero-config replacement for run-vpn-mode.bat's -la flag: VPN/ExitLag
+// users' decrypted game packets surface on tunnel/TAP/virtual adapters that
+// the physical-only default never watches. Double-capture cannot happen: we
+// only escalate when the physical path is provably silent, and the encrypted
+// tunnel on the physical NIC never matches the port-5056 BPF filter.
+func (apw *albionProcessWatcher) autoEscalateForVPN() {
+	if ConfigGlobal.ListenAllInterfaces {
+		return // -la already listens on everything
+	}
+	time.Sleep(vpnEscalateAfterSec * time.Second)
+	if photonPacketsSeen.Load() > 0 {
+		return // game traffic flows on the physical adapters — nothing to do
+	}
+	all, err := getAllUpInterfaces()
+	if err != nil {
+		log.Debugf("[VPN-Auto] Adapter enumeration failed: %v", err)
+		return
+	}
+	apw.mu.Lock()
+	existing := map[string]bool{}
+	for _, d := range apw.devices {
+		existing[d] = true
+	}
+	apw.mu.Unlock()
+	var extra []string
+	for _, d := range all {
+		if !existing[d] {
+			extra = append(extra, d)
+		}
+	}
+	if len(extra) == 0 {
+		return
+	}
+	log.Infof("[VPN-Auto] No game traffic on the physical adapters after %ds — also listening on %d tunnel/virtual adapter(s) (VPN/ExitLag support). Harmless if the game just isn't running yet.", vpnEscalateAfterSec, len(extra))
+	for _, device := range extra {
+		l := newListener(apw.r)
+		go func(dev string, ln *listener) {
+			// Tunnel adapters can refuse pcap opens — fail soft instead of
+			// letting startOnline's log.Panic kill the whole client.
+			defer func() {
+				if r := recover(); r != nil {
+					log.Debugf("[VPN-Auto] Could not listen on %s: %v", dev, r)
+				}
+			}()
+			ln.startOnline(dev, 5056)
+		}(device, l)
+		apw.mu.Lock()
+		apw.listeners[5056] = append(apw.listeners[5056], l)
+		apw.devices = append(apw.devices, device)
+		apw.mu.Unlock()
+	}
+}
+
 func (apw *albionProcessWatcher) closeWatcher() {
 	log.Print("Albion watcher closed")
 
+	apw.mu.Lock()
 	for port := range apw.listeners {
 		for _, l := range apw.listeners[port] {
 			l.stop()
@@ -56,6 +122,7 @@ func (apw *albionProcessWatcher) closeWatcher() {
 
 		delete(apw.listeners, port)
 	}
+	apw.mu.Unlock()
 
 	apw.r.quit <- true
 }
@@ -63,6 +130,8 @@ func (apw *albionProcessWatcher) closeWatcher() {
 func (apw *albionProcessWatcher) createListeners() {
 	filtered := [1]int{5056} // keep overdesign to listen on many ports
 
+	apw.mu.Lock()
+	defer apw.mu.Unlock()
 	for _, port := range filtered {
 		for _, device := range apw.devices {
 			l := newListener(apw.r)
