@@ -160,11 +160,12 @@ func EnsureCaptureToken() string {
 		return ""
 	}
 
-	// Save to config file (resolve relative to executable path, not CWD)
+	// Save to config file in the writable data dir (falls back to
+	// %LOCALAPPDATA%\AlbionDataClient when the install dir is not writable —
+	// previously the save failed silently on Program Files installs and the
+	// device auth prompt reappeared on every launch).
 	viper.Set("CaptureToken", newToken)
-	exePath, _ := os.Executable()
-	configDir := filepath.Dir(exePath)
-	configFile := filepath.Join(configDir, "config.yaml")
+	configFile := filepath.Join(DataDir(), "config.yaml")
 	if err := writeConfigFile(configFile, newToken); err != nil {
 		log.Warnf("[Auth] Could not save token to config: %v", err)
 		fmt.Printf("Warning: Could not save token to %s — you'll need to authorize again next time.\n", configFile)

@@ -206,15 +206,7 @@ func (w *chestLogFileWriter) ensureInit() error {
 	if w.ready {
 		return nil
 	}
-	exePath, err := os.Executable()
-	if err != nil {
-		exePath = "."
-	}
-	logsDir := filepath.Join(filepath.Dir(exePath), "logs")
-	if mkErr := os.MkdirAll(logsDir, 0755); mkErr != nil {
-		logsDir = "logs"
-		_ = os.MkdirAll(logsDir, 0755)
-	}
+	logsDir := LogsDir()
 
 	t := time.Now().UTC()
 	filename := fmt.Sprintf("chest-logs-%s.tsv", t.Format("2006-01-02_15-04-05"))

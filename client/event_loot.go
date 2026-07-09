@@ -263,17 +263,7 @@ func (w *lootFileWriter) ensureInit() error {
 		return nil
 	}
 
-	// Resolve logs directory next to the executable
-	exePath, err := os.Executable()
-	if err != nil {
-		exePath = "."
-	}
-	logsDir := filepath.Join(filepath.Dir(exePath), "logs")
-	if mkErr := os.MkdirAll(logsDir, 0755); mkErr != nil {
-		// Fall back to a local logs/ directory
-		logsDir = "logs"
-		_ = os.MkdirAll(logsDir, 0755)
-	}
+	logsDir := LogsDir()
 
 	t := time.Now().UTC()
 	filename := fmt.Sprintf("loot-events-%s.txt", t.Format("2006-01-02_15-04-05"))

@@ -51,15 +51,7 @@ func initUnknownLogger() error {
 	if _unknownLogger.file != nil {
 		return nil
 	}
-	exePath, err := os.Executable()
-	if err != nil {
-		exePath = "."
-	}
-	logsDir := filepath.Join(filepath.Dir(exePath), "logs")
-	if mkErr := os.MkdirAll(logsDir, 0755); mkErr != nil {
-		logsDir = "logs"
-		_ = os.MkdirAll(logsDir, 0755)
-	}
+	logsDir := LogsDir()
 	_unknownLogger.started = time.Now().UTC()
 	filename := fmt.Sprintf("unknown-events-%s.log", _unknownLogger.started.Format("2006-01-02_15-04-05"))
 	path := filepath.Join(logsDir, filename)

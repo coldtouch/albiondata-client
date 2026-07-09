@@ -79,6 +79,7 @@ type config struct {
 	ChestLogActionMappingVerified  bool   // True after a controlled in-game deposit/withdraw mapping check
 	ListenAllInterfaces            bool   // VPN/ExitLag support: listen on EVERY up adapter (incl. TUN/TAP/virtual)
 	ForceServer                    string // VPN/ExitLag support: pin the game server (west|east|europe) when source IPs are relay IPs
+	ForceWinDivert                 bool   // VPN/ExitLag support: start kernel-level (WFP) capture immediately instead of waiting for auto-escalation. Requires Administrator.
 }
 
 // config global config data
@@ -143,6 +144,9 @@ func (config *config) applyConfigFileOverridesAfterFlags() {
 	if !flagWasProvided("force-server") && viper.IsSet("ForceServer") {
 		config.ForceServer = viper.GetString("ForceServer")
 	}
+	if !flagWasProvided("windivert") && viper.IsSet("ForceWinDivert") {
+		config.ForceWinDivert = viper.GetBool("ForceWinDivert")
+	}
 	if !flagWasProvided("vps-url") && viper.IsSet("VPSRelayURL") {
 		config.VPSRelayURL = viper.GetString("VPSRelayURL")
 	}
@@ -191,6 +195,10 @@ func (config *config) setupWebsocketFlags() {
 
 	// Fall back to the current working directory
 	viper.AddConfigPath(".")
+
+	// And the writable data dir — device auth saves the token there when the
+	// install dir (e.g. Program Files) is not writable.
+	viper.AddConfigPath(DataDir())
 
 	err := viper.ReadInConfig()
 
@@ -336,6 +344,13 @@ func (config *config) setupCommonFlags() {
 		"Pin the game server when playing through a VPN/tunnel (source IPs are relay IPs, so auto-detection fails): west, east or europe.",
 	)
 
+	flag.BoolVar(
+		&config.ForceWinDivert,
+		"windivert",
+		false,
+		"Start kernel-level (WFP) capture immediately — the most robust mode for ExitLag/VPN users. Requires running as Administrator. Without this flag the client tries it automatically after 2 minutes of packet silence.",
+	)
+
 	flag.StringVar(
 		&config.OfflinePath,
 		"o",
@@ -449,7 +464,7 @@ func (config *config) setupLogs() {
 	// Always log to both file and terminal
 	// Use colors for terminal, strip ANSI codes for file
 	log.SetFormatter(&logrus.TextFormatter{FullTimestamp: true, DisableSorting: true, ForceColors: true})
-	f, err := os.OpenFile(logFileName, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
+	f, err := os.OpenFile(logFilePath(), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
 	if err == nil {
 		// Wrap file writer to strip ANSI codes
 		strippedFileWriter := newAnsiStripWriter(f)
@@ -461,37 +476,46 @@ func (config *config) setupLogs() {
 	}
 }
 
+// logFilePath returns the log file location inside the writable data dir.
+// Historically this was a bare relative path (CWD), which silently failed to
+// be created on default Program Files installs.
+func logFilePath() string {
+	return filepath.Join(DataDir(), logFileName)
+}
+
 // rotateLogFiles moves the current log file to a numbered backup and removes old backups
 func rotateLogFiles() {
+	base := logFilePath()
+
 	// Check if current log file exists
-	if _, err := os.Stat(logFileName); os.IsNotExist(err) {
+	if _, err := os.Stat(base); os.IsNotExist(err) {
 		return // No log file to rotate
 	}
 
 	// Remove the oldest log file if we're at the limit
-	oldestLog := fmt.Sprintf("%s.%d", logFileName, maxLogFiles)
+	oldestLog := fmt.Sprintf("%s.%d", base, maxLogFiles)
 	_ = os.Remove(oldestLog)
 
 	// Shift all existing log files up by one number
 	for i := maxLogFiles - 1; i >= 1; i-- {
-		oldName := fmt.Sprintf("%s.%d", logFileName, i)
-		newName := fmt.Sprintf("%s.%d", logFileName, i+1)
+		oldName := fmt.Sprintf("%s.%d", base, i)
+		newName := fmt.Sprintf("%s.%d", base, i+1)
 		if err := os.Rename(oldName, newName); err != nil && !os.IsNotExist(err) {
 			log.Warnf("[Config] Log rotation failed: %v", err)
 		}
 	}
 
 	// Rename current log file to .1
-	if err := os.Rename(logFileName, fmt.Sprintf("%s.1", logFileName)); err != nil {
+	if err := os.Rename(base, fmt.Sprintf("%s.1", base)); err != nil {
 		log.Warnf("[Config] Log rotation failed: %v", err)
 	}
 }
 
 // GetLogFilePath returns the full path to the current log file
 func GetLogFilePath() string {
-	absPath, err := filepath.Abs(logFileName)
+	absPath, err := filepath.Abs(logFilePath())
 	if err != nil {
-		return logFileName
+		return logFilePath()
 	}
 	return absPath
 }

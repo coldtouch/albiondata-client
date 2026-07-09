@@ -47,12 +47,7 @@ var (
 )
 
 func serverStatePath() string {
-	logsDir := "logs"
-	if exePath, err := os.Executable(); err == nil {
-		logsDir = filepath.Join(filepath.Dir(exePath), "logs")
-	}
-	_ = os.MkdirAll(logsDir, 0755)
-	return filepath.Join(logsDir, "server-state.json")
+	return filepath.Join(LogsDir(), "server-state.json")
 }
 
 // persistDetectedServer records a positively-identified game server so future

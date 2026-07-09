@@ -77,15 +77,7 @@ func initTradeLogger() error {
 	if _tradeLogger.file != nil {
 		return nil
 	}
-	exePath, err := os.Executable()
-	if err != nil {
-		exePath = "."
-	}
-	logsDir := filepath.Join(filepath.Dir(exePath), "logs")
-	if mkErr := os.MkdirAll(logsDir, 0755); mkErr != nil {
-		logsDir = "logs"
-		_ = os.MkdirAll(logsDir, 0755)
-	}
+	logsDir := LogsDir()
 	_tradeLogger.started = time.Now().UTC()
 	filename := fmt.Sprintf("trade-debug-%s.log", _tradeLogger.started.Format("2006-01-02_15-04-05"))
 	path := filepath.Join(logsDir, filename)
