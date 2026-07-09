@@ -146,7 +146,12 @@ func (l *listener) run() {
 
 func (l *listener) stop() {
 	l.quit <- true
-	l.handle.Close()
+	// handle is nil when startOnline panicked before opening the device (e.g.
+	// a tunnel adapter refusing pcap) — the recovered listener stays in the
+	// watcher map and must not crash shutdown.
+	if l.handle != nil {
+		l.handle.Close()
+	}
 }
 
 func (l *listener) processPacket(packet gopacket.Packet) {

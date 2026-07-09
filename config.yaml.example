@@ -8,3 +8,9 @@ CaptureToken: "YOUR_CAPTURE_TOKEN_HERE"
 ChestLogDepositFilterValue: 28
 ChestLogWithdrawFilterValue: 1
 ChestLogActionMappingVerified: false
+
+# --- VPN / ExitLag support (all optional — the client auto-detects) ---
+# ListenAllInterfaces: true    # pcap on every adapter incl. tunnels (auto after 60s of silence)
+# ForceServer: "europe"        # west | east | europe — pins the server when IP detection can't work
+# ForceWinDivert: true         # kernel-level capture from startup (needs Administrator;
+#                              # tried automatically after 120s of silence anyway)
