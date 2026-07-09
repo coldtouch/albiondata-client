@@ -95,8 +95,13 @@ var wsDialer = &websocket.Dialer{
 	HandshakeTimeout: 15 * time.Second,
 }
 
-// wsReadDeadline is reset after every successful message to detect half-open
-// TCP connections (GC-7).
+// wsReadDeadline is reset after every successful message AND every server ping
+// to detect half-open TCP connections (GC-7). The backend sends a WS ping every
+// 30s but almost never sends data frames to Go clients — pings are control
+// frames that ReadMessage does not return, so without the ping-handler reset
+// (installed in connect()) the deadline fired on every healthy connection and
+// the relay reconnected + re-authenticated every 60s ("auth spam", present
+// since 2026-04-16).
 const wsReadDeadline = 60 * time.Second
 
 const (
@@ -142,15 +147,7 @@ func InitVPSRelay(captureToken string) {
 }
 
 func relaySpoolPath() string {
-	logsDir := "logs"
-	if exePath, err := os.Executable(); err == nil {
-		logsDir = filepath.Join(filepath.Dir(exePath), "logs")
-	}
-	if err := os.MkdirAll(logsDir, 0755); err != nil {
-		logsDir = "logs"
-		_ = os.MkdirAll(logsDir, 0755)
-	}
-	return filepath.Join(logsDir, "vps-relay-pending.jsonl")
+	return filepath.Join(LogsDir(), "vps-relay-pending.jsonl")
 }
 
 func loadRelaySpool(path string) [][]byte {
@@ -379,6 +376,21 @@ func (r *VPSRelay) connect() (wasConnected bool) {
 		log.Debugf("[VPSRelay] Connection failed: %v", err)
 		return false
 	}
+
+	// The server pings every 30s as its liveness check. Gorilla's default ping
+	// handler answers with a pong but does NOT touch the read deadline, and
+	// pings never satisfy ReadMessage — so a connection that only ever receives
+	// pings would hit wsReadDeadline and be torn down while perfectly healthy.
+	// Reset the deadline here; if the server truly dies, pings stop and the
+	// deadline still fires within 60s.
+	conn.SetPingHandler(func(appData string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
+		err := conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(10*time.Second))
+		if err == websocket.ErrCloseSent {
+			return nil
+		}
+		return err
+	})
 
 	// GO-C2: close the connection when the relay context is cancelled so any
 	// goroutine blocked on ReadMessage returns promptly without leaking.

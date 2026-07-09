@@ -119,6 +119,13 @@ func tryUpdate(u *updater.Updater) bool {
 	for i := 0; i < maxTries; i++ {
 		updated, err := u.BackgroundUpdater()
 		if err != nil {
+			// GitHub allows 60 unauthenticated API calls per hour per IP; a 403
+			// rate-limit here is harmless and retrying in 60s can't succeed —
+			// the hourly loop in startUpdater will check again anyway.
+			if strings.Contains(err.Error(), "rate limit") {
+				log.Info("Update check skipped (GitHub API rate limit) — will retry in an hour.")
+				return false
+			}
 			log.Error(err.Error())
 			if i < maxTries-1 {
 				log.Info("Will try again in 60 seconds. You may need to run the client as Administrator.")
