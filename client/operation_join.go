@@ -6,6 +6,9 @@ import (
 )
 
 type operationJoinResponse struct {
+	// Param 0 = own in-zone object id — every HealthUpdate/combat event
+	// references entities by these per-zone ids (combat_tracker.go).
+	ObjectID      int64           `mapstructure:"0"`
 	CharacterID   lib.CharacterID `mapstructure:"1"`
 	CharacterName string          `mapstructure:"2"`
 	// Param 8 IS the current zone. Earlier in this session I incorrectly
@@ -51,4 +54,8 @@ func (op operationJoinResponse) Process(state *albionState) {
 		log.Infof("Updating player to %v.", op.CharacterName)
 	}
 	state.SetCharacterName(op.CharacterName)
+
+	// Combat meter: own objId + zone (finalizes any encounter left open
+	// across the zone transition — object ids are per-zone).
+	CombatSetSelf(op.ObjectID, op.CharacterName, op.Location)
 }

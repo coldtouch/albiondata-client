@@ -505,6 +505,30 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		event = &eventKilledPlayer{}
 	case evCharacterEquipmentChanged:
 		event = &eventCharacterEquipmentChanged{}
+	case 6: // live HealthUpdate — combat meter (never shifted; Phase 0 confirmed 2026-07-09)
+		combatHandleHealthUpdate(params)
+		return nil, nil
+	case 7: // live HealthUpdates (batch variant on one target)
+		combatHandleHealthUpdates(params)
+		return nil, nil
+	case 82: // live UpdateFame — p2 = fame gained ×10⁴ (premium-inclusive)
+		combatHandleUpdateFame(params)
+		return nil, nil
+	case 231: // live PartyJoined — full roster sync (Phase 0 confirmed)
+		combatHandlePartyJoined(params)
+		return nil, nil
+	case 233: // live PartyPlayerJoined (SAT layout; unobserved live — defensive parse)
+		combatHandlePartyPlayerJoined(params)
+		return nil, nil
+	case 235: // live PartyPlayerLeft (SAT layout; unobserved live — defensive parse)
+		combatHandlePartyPlayerLeft(params)
+		return nil, nil
+	case 232: // live PartyDisbanded (Phase 0 confirmed)
+		combatHandlePartyDisbanded(params)
+		return nil, nil
+	case 278: // live InCombatStateUpdate — self combat flags close encounters early
+		combatHandleInCombatState(params)
+		return nil, nil
 	case evInvitationPlayerTrade, evPlayerTradeStart, evPlayerTradeCancel,
 		evPlayerTradeUpdate, evPlayerTradeFinished, evPlayerTradeAcceptChange,
 		evPlayerTradeFinished + 2, evPlayerTradeAcceptChange + 2:

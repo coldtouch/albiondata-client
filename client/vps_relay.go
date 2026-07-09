@@ -603,6 +603,22 @@ func SendTradeEvent(trade *TradeEvent) {
 	}
 }
 
+// SendCombatEncounter relays one finished combat encounter summary (damage
+// meter Phase 1). Queued on disconnect like the other relay messages.
+func SendCombatEncounter(enc *CombatEncounter) {
+	if vpsRelay == nil || enc == nil {
+		return
+	}
+	msgJSON, err := buildRelayMessage("combat-encounter", enc)
+	if err != nil {
+		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
+		return
+	}
+	if vpsRelay.sendOrQueue(msgJSON) {
+		log.Infof("[VPSRelay] Sent combat encounter: %ds, %d players", enc.DurationSec, len(enc.Players))
+	}
+}
+
 func SendSaleNotification(sale *SaleNotification) {
 	if vpsRelay == nil {
 		return
