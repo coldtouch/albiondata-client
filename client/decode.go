@@ -532,6 +532,11 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		}
 		return nil, nil
 	default:
+		if isCombatDiagCode(eventType) {
+			// Damage-meter Phase 0: full dump to confirm HealthUpdate/party/
+			// combat-state codes + param layout (see client/combat_diag.go).
+			dumpCombatEvent(eventType, params)
+		}
 		if isResourceDiagCode(eventType) {
 			// Open-world resource discovery: full dump to identify the live opcode
 			// + param layout. Still also recorded in unknown-events for the summary.
