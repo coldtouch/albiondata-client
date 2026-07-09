@@ -41,6 +41,8 @@ const (
 	combatMaxDurationSec = 1800    // hard split for marathon encounters
 	combatMaxPlayers     = 12      // payload cap (party is ≤20, usually ≤10)
 	combatMaxBuckets     = 900     // downsample payload beyond this many buckets
+	combatLiveIntervalMs = 3000    // in-progress snapshot cadence (Phase 2)
+	combatLiveMinTotal   = 100     // don't stream until the fight is real
 )
 
 type combatBucket struct{ d, h, t float64 }
@@ -57,23 +59,26 @@ type combatPlayerAgg struct {
 type CombatEncounterPlayer struct {
 	Name    string `json:"name"`
 	Self    bool   `json:"self,omitempty"`
+	Weapon  string `json:"weapon,omitempty"` // mainhand item id (equipment tracker)
 	Damage  int64  `json:"damage"`
 	Healing int64  `json:"healing"`
 	Taken   int64  `json:"taken"`
-	// Parallel per-bucket series (ints, silver-free — raw HP values)
-	D []int64 `json:"d"`
-	H []int64 `json:"h"`
-	T []int64 `json:"t"`
+	// Parallel per-bucket series (omitted on live frames — the browser
+	// accumulates its own timeline from successive frame deltas)
+	D []int64 `json:"d,omitempty"`
+	H []int64 `json:"h,omitempty"`
+	T []int64 `json:"t,omitempty"`
 }
 
 type CombatEncounter struct {
 	StartedAt   int64                   `json:"startedAt"` // unix ms
-	EndedAt     int64                   `json:"endedAt"`
+	EndedAt     int64                   `json:"endedAt,omitempty"`
 	DurationSec int64                   `json:"durationSec"`
-	BucketSec   int64                   `json:"bucketSec"` // seconds per bucket (≥1)
-	Zone        string                  `json:"zone"`      // raw location id — frontend formats
-	PartySize   int                     `json:"partySize"` // 0 = solo
-	Fame        int64                   `json:"fame"`      // premium-inclusive, /10⁴ applied
+	BucketSec   int64                   `json:"bucketSec,omitempty"` // seconds per bucket (≥1)
+	Zone        string                  `json:"zone"`                // raw location id — frontend formats
+	PartySize   int                     `json:"partySize"`           // 0 = solo
+	Fame        int64                   `json:"fame"`                // premium-inclusive, /10⁴ applied
+	Live        bool                    `json:"live,omitempty"`      // in-progress snapshot (combat-live)
 	Players     []CombatEncounterPlayer `json:"players"`
 }
 
@@ -96,6 +101,7 @@ type combatTracker struct {
 	active         bool
 	startMs        int64
 	lastActivityMs int64
+	lastStreamMs   int64 // last combat-live frame
 	oocSinceMs     int64 // 0 while self is in combat
 	fameRaw        float64
 	players        map[string]*combatPlayerAgg
@@ -212,9 +218,25 @@ func CombatSetSelf(objID int64, name, zone string) {
 	}
 	ct.zone = zone
 	ct.mu.Unlock()
+	// Register self in the objId→name registry (evNewCharacter covers only
+	// OTHER players) so equipment tracking (ev90) resolves our own gear too.
+	if objID > 0 && name != "" {
+		objectIDToName.Store(objID, name)
+	}
 	if payload != nil {
 		SendCombatEncounter(payload)
 	}
+}
+
+// combatWeaponFor returns the tracked mainhand item id for a player (slot 0
+// of the ev90 equipment snapshot), or "" when unknown.
+func combatWeaponFor(name string) string {
+	for _, it := range getEquipmentForPlayer(name) {
+		if it.Slot == 0 && it.ItemID != "" {
+			return it.ItemID
+		}
+	}
+	return ""
 }
 
 // --- name resolution / tracking ---
@@ -274,6 +296,7 @@ func (ct *combatTracker) record(target, causer int64, change float64, spell int6
 		ct.startMs = nowMs
 		ct.fameRaw = 0
 		ct.oocSinceMs = 0
+		ct.lastStreamMs = nowMs // first live frame after one full interval
 		ct.players = map[string]*combatPlayerAgg{}
 	}
 	ct.lastActivityMs = nowMs
@@ -505,20 +528,76 @@ func (ct *combatTracker) ensureTicker() {
 				nowMs := time.Now().UnixMilli()
 				ct.mu.Lock()
 				var payload *CombatEncounter
+				var frame *CombatEncounter
 				if ct.active {
 					idle := nowMs - ct.lastActivityMs
 					if idle > combatIdleTimeoutMs ||
 						(ct.oocSinceMs > 0 && nowMs-ct.oocSinceMs > combatOOCGraceMs && idle > combatOOCGraceMs) {
 						payload = ct.finalizeLocked("idle")
+					} else if nowMs-ct.lastStreamMs >= combatLiveIntervalMs {
+						frame = ct.buildLiveFrameLocked(nowMs)
+						ct.lastStreamMs = nowMs
 					}
 				}
 				ct.mu.Unlock()
 				if payload != nil {
 					SendCombatEncounter(payload)
 				}
+				if frame != nil {
+					SendCombatLiveFrame(frame)
+				}
 			}
 		}()
 	})
+}
+
+// buildLiveFrameLocked snapshots the in-progress encounter as a compact
+// totals-only frame (no bucket series — the browser accumulates its own
+// timeline from successive frame deltas). Caller must hold ct.mu and send
+// AFTER releasing the lock. Nil while the fight is still below the stream
+// threshold.
+func (ct *combatTracker) buildLiveFrameLocked(nowMs int64) *CombatEncounter {
+	var total float64
+	for _, p := range ct.players {
+		total += p.damage + p.taken + p.healing
+	}
+	if total < combatLiveMinTotal {
+		return nil
+	}
+	enc := &CombatEncounter{
+		StartedAt:   ct.startMs,
+		DurationSec: (nowMs-ct.startMs)/1000 + 1,
+		Zone:        ct.zone,
+		PartySize:   len(ct.partyNames),
+		Fame:        int64(ct.fameRaw / 10000),
+		Live:        true,
+	}
+	names := make([]string, 0, len(ct.players))
+	for n := range ct.players {
+		names = append(names, n)
+	}
+	for i := 0; i < len(names); i++ {
+		for j := i + 1; j < len(names); j++ {
+			if ct.players[names[j]].damage > ct.players[names[i]].damage {
+				names[i], names[j] = names[j], names[i]
+			}
+		}
+	}
+	if len(names) > combatMaxPlayers {
+		names = names[:combatMaxPlayers]
+	}
+	for _, n := range names {
+		p := ct.players[n]
+		enc.Players = append(enc.Players, CombatEncounterPlayer{
+			Name:    n,
+			Self:    n == ct.selfName,
+			Weapon:  combatWeaponFor(n),
+			Damage:  int64(p.damage),
+			Healing: int64(p.healing),
+			Taken:   int64(p.taken),
+		})
+	}
+	return enc
 }
 
 // finalizeLocked closes the active encounter and returns the relay payload
@@ -587,6 +666,7 @@ func (ct *combatTracker) finalizeLocked(reason string) *CombatEncounter {
 		cp := CombatEncounterPlayer{
 			Name:    n,
 			Self:    n == ct.selfName,
+			Weapon:  combatWeaponFor(n),
 			Damage:  int64(p.damage),
 			Healing: int64(p.healing),
 			Taken:   int64(p.taken),

@@ -64,17 +64,23 @@ func getEquipmentForPlayer(name string) []EquippedItem {
 
 // eventCharacterEquipmentChanged fires when a player swaps gear.
 //
-// The exact param layout for opcode 90 has shifted between game versions.
-// We capture ObjectID + the most likely "items" slice and resolve names
-// best-effort. If the layout is wrong on a given build, the slice will be
-// empty and we silently skip — better than crashing on bad data.
+// Live layout (2026-07-09 combat capture): p0 = objId, p1 = game timestamp,
+// p2 = equipment numericIds by slot (0=mainhand, 1=offhand, 2=head, 3=chest,
+// 4=shoes, 6=cape, 7=mount — confirmed against [EquipItem] resolution:
+// p2[0]=6851 → T4_MAIN_FIRESTAFF@2). Pre-April builds carried the items at
+// p1 — kept as a fallback for older servers.
 type eventCharacterEquipmentChanged struct {
-	ObjectID int64   `mapstructure:"0"`
-	Items    []int32 `mapstructure:"1"`
+	ObjectID    int64   `mapstructure:"0"`
+	ItemsLegacy []int32 `mapstructure:"1"`
+	Items       []int32 `mapstructure:"2"`
 }
 
 func (ev eventCharacterEquipmentChanged) Process(state *albionState) {
-	if ev.ObjectID == 0 || len(ev.Items) == 0 {
+	slotItems := ev.Items
+	if len(slotItems) == 0 {
+		slotItems = ev.ItemsLegacy
+	}
+	if ev.ObjectID == 0 || len(slotItems) == 0 {
 		return
 	}
 	name := playerNameByObjectID(ev.ObjectID)
@@ -82,8 +88,8 @@ func (ev eventCharacterEquipmentChanged) Process(state *albionState) {
 		return // we have not seen this character yet — skip rather than store under empty key
 	}
 
-	items := make([]EquippedItem, 0, len(ev.Items))
-	for slot, numID := range ev.Items {
+	items := make([]EquippedItem, 0, len(slotItems))
+	for slot, numID := range slotItems {
 		if numID <= 0 {
 			continue // empty slot
 		}

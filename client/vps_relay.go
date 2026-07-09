@@ -603,6 +603,25 @@ func SendTradeEvent(trade *TradeEvent) {
 	}
 }
 
+// SendCombatLiveFrame pushes an in-progress encounter snapshot (damage meter
+// Phase 2 live view). Live frames are only useful fresh, so they are skipped
+// — never queued — while disconnected. (A frame that races into the retry
+// queue between the check and the write is bounded and harmless: the browser
+// discards frames whose startedAt no longer matches its live encounter.)
+func SendCombatLiveFrame(enc *CombatEncounter) {
+	if vpsRelay == nil || enc == nil || !vpsRelay.connected.Load() {
+		return
+	}
+	msgJSON, err := buildRelayMessage("combat-live", enc)
+	if err != nil {
+		log.Errorf("[VPSRelay] JSON marshal failed: %v", err)
+		return
+	}
+	if vpsRelay.sendOrQueue(msgJSON) {
+		log.Debugf("[VPSRelay] Sent combat live frame: %ds, %d players", enc.DurationSec, len(enc.Players))
+	}
+}
+
 // SendCombatEncounter relays one finished combat encounter summary (damage
 // meter Phase 1). Queued on disconnect like the other relay messages.
 func SendCombatEncounter(enc *CombatEncounter) {
