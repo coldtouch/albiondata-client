@@ -31,6 +31,17 @@ import (
 //	243 PartyOnClusterPartyJoined (roster re-sync on zone change)
 //	278 InCombatStateUpdate  p0 objId, p1 activeCombat, p2 passiveCombat
 //
+// PHASE 0 RESULT (in-game capture 2026-07-09, solo Mists + Morgana sub-dungeon):
+//   6/7/278 CONFIRMED at the codes and layouts above. 278: p1/p2 bools are
+//   simply OMITTED when false. 243 fired on cluster join with p0=GUID,
+//   p1=[count], p2=names[] (empty strings while solo). 231/233/235/232 did
+//   NOT fire (no party formed) — still need one 5-min capture while in a
+//   party before wiring party-roster handling; damage attribution itself
+//   works via p6 causer objId + evNewCharacter(29) name tracking.
+//   The capture also exposed that V18 float params were decoded big-endian —
+//   fixed to little-endian in photon-spectator decode_reliable_message.go
+//   (damage/HP values were denormal garbage before that fix).
+//
 // If a dump disagrees with the table above, the live enum shifted again —
 // re-run the Triky313 EventCodes.cs diff before wiring handlers.
 // ============================================================================

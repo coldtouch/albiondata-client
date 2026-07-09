@@ -228,15 +228,27 @@ func readV18Value(buf *bytes.Buffer, gpType uint8) interface{} {
 		return v
 
 	// === Float ===
-	case V18_Float, Float32Type:
+	// V18 floats are little-endian like V18 shorts/int2/long2. Proven by the
+	// 2026-07-09 combat capture: HealthUpdate(6)/HealthUpdates(7) change+newHP
+	// decoded as BE were denormal garbage (e.g. 3.6145e-41); byte-swapped they
+	// are exact (-63 dmg -> HP 968, then -19 -> 949; 968-19=949).
+	case V18_Float:
 		var v float32
-		binary.Read(buf, binary.BigEndian, &v)
+		binary.Read(buf, binary.LittleEndian, &v)
+		return v
+	case Float32Type:
+		var v float32
+		binary.Read(buf, binary.BigEndian, &v) // legacy P16 BE
 		return v
 
 	// === Double ===
-	case V18_Double, DoubleType:
+	case V18_Double:
 		var v float64
-		binary.Read(buf, binary.BigEndian, &v)
+		binary.Read(buf, binary.LittleEndian, &v)
+		return v
+	case DoubleType:
+		var v float64
+		binary.Read(buf, binary.BigEndian, &v) // legacy P16 BE
 		return v
 
 	// === String ===
@@ -333,7 +345,7 @@ func readV18Value(buf *bytes.Buffer, gpType uint8) interface{} {
 		}
 		return array
 
-	// === FloatArray ===
+	// === FloatArray === (V18 floats are LE — see V18_Float above)
 	case V18_FloatArray:
 		length, err := readCompressedUInt32(buf)
 		if err != nil || length > 100000 {
@@ -341,11 +353,11 @@ func readV18Value(buf *bytes.Buffer, gpType uint8) interface{} {
 		}
 		array := make([]float32, length)
 		for j := uint32(0); j < length; j++ {
-			binary.Read(buf, binary.BigEndian, &array[j])
+			binary.Read(buf, binary.LittleEndian, &array[j])
 		}
 		return array
 
-	// === DoubleArray ===
+	// === DoubleArray === (V18 doubles are LE — see V18_Double above)
 	case V18_DoubleArray:
 		length, err := readCompressedUInt32(buf)
 		if err != nil || length > 100000 {
@@ -353,7 +365,7 @@ func readV18Value(buf *bytes.Buffer, gpType uint8) interface{} {
 		}
 		array := make([]float64, length)
 		for j := uint32(0); j < length; j++ {
-			binary.Read(buf, binary.BigEndian, &array[j])
+			binary.Read(buf, binary.LittleEndian, &array[j])
 		}
 		return array
 
