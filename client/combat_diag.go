@@ -31,13 +31,19 @@ import (
 //	243 PartyOnClusterPartyJoined (roster re-sync on zone change)
 //	278 InCombatStateUpdate  p0 objId, p1 activeCombat, p2 passiveCombat
 //
-// PHASE 0 RESULT (in-game capture 2026-07-09, solo Mists + Morgana sub-dungeon):
+// PHASE 0 RESULT (in-game capture 2026-07-09, Mists + Morgana sub-dungeon,
+// 2-man party "Coldtouch"+"goblin1" formed 16:15:10, disbanded 16:21:39):
 //   6/7/278 CONFIRMED at the codes and layouts above. 278: p1/p2 bools are
-//   simply OMITTED when false. 243 fired on cluster join with p0=GUID,
-//   p1=[count], p2=names[] (empty strings while solo). 231/233/235/232 did
-//   NOT fire (no party formed) — still need one 5-min capture while in a
-//   party before wiring party-roster handling; damage attribution itself
-//   works via p6 causer objId + evNewCharacter(29) name tracking.
+//   simply OMITTED when false.
+//   231 CONFIRMED = full-roster party sync: p0 int32 partyId (18030 — same id
+//   stamps NewSilverObject p9 and PartySetRoleFlag p0), p4 leader GUID,
+//   p8 flat []int8 of 16-byte member GUIDs, p9 []string member names,
+//   p16 []bool online flags.
+//   232 CONFIRMED = disband/leave: p1 int32 partyId.
+//   243 fired on every cluster join: p0 = OWN char GUID, p1=[9], p2 = 6 empty
+//   strings — roster re-sync trigger, not the roster source.
+//   233/235 never fired (nobody joined/left mid-party) — wire defensively per
+//   SAT layout (p1 GUID, p2 name) and confirm opportunistically.
 //   The capture also exposed that V18 float params were decoded big-endian —
 //   fixed to little-endian in photon-spectator decode_reliable_message.go
 //   (damage/HP values were denormal garbage before that fix).
