@@ -464,8 +464,14 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 
 	switch EventType(eventType) {
 	case evNewCharacter:
+		// Trade-debug correlation: keep the latest FULL param map per player so
+		// trade events can be matched against ANY id field a nearby player has
+		// (partner-name on initiator-side trades is the open question). Cheap
+		// in-memory copy; only ever written to disk when a trade event fires.
+		rememberCharParams(params)
 		event = &eventNewCharacter{}
 	case evCharacterStats:
+		rememberCharParams(params)
 		event = &eventCharacterStats{}
 	case evOtherGrabbedLoot + 4: // live 279 since June 29 2026 update (was 277 Apr-Jun, 275 before)
 		event = &eventOtherGrabbedLoot{}

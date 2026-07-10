@@ -42,6 +42,43 @@ type tradeLoggerState struct {
 
 var _tradeLogger tradeLoggerState
 
+// charParamCache keeps the most recent FULL param map from evNewCharacter (29)
+// / evCharacterStats (143) per player name. Dumped alongside every trade event
+// so ANY id in a trade packet (objId, character session id, whatever the
+// protocol uses) can be correlated against a nearby player — this is how we
+// find the partner-id param for INITIATOR-side trades, where the invitation
+// event (with the partner's name) never fires on our client.
+var charParamCache sync.Map // map[string]map[uint8]interface{} — player name → params copy
+var charParamMu sync.Mutex  // guards charParamNames (multiple pcap listeners may decode concurrently)
+var charParamNames int
+
+const charParamCacheCap = 400 // hard cap; cleared wholesale when exceeded (debug aid, not prod state)
+
+// rememberCharParams stores a defensive copy of a character event's params,
+// keyed by player name (param 1). Called from the decode hot path — the copy
+// is small (~20 params) and only happens on character-info events, which are
+// far rarer than movement/combat traffic.
+func rememberCharParams(params map[uint8]interface{}) {
+	name, _ := params[1].(string)
+	if name == "" {
+		return
+	}
+	cp := make(map[uint8]interface{}, len(params))
+	for k, v := range params {
+		cp[k] = v
+	}
+	if _, existed := charParamCache.Load(name); !existed {
+		charParamMu.Lock()
+		charParamNames++
+		if charParamNames > charParamCacheCap {
+			charParamCache.Range(func(k, _ interface{}) bool { charParamCache.Delete(k); return true })
+			charParamNames = 1
+		}
+		charParamMu.Unlock()
+	}
+	charParamCache.Store(name, cp)
+}
+
 // isTradeEventCode returns true for any opcode in the player-trade range.
 func isTradeEventCode(code int16) bool {
 	return code >= tradeOpcodeMin && code <= tradeOpcodeMax
@@ -137,6 +174,38 @@ func recordTradeEvent(code int16, params map[uint8]interface{}) {
 	for _, k := range keys {
 		dumpTradeParam(_tradeLogger.file, k, params[k])
 	}
+
+	// --- Correlation context (partner-name hunt for initiator-side trades) ---
+	// 1. objId → name of every player currently tracked nearby. If a trade
+	//    param equals one of these objIds, that param is the partner reference.
+	fmt.Fprintln(_tradeLogger.file, "  --- nearby players (objId -> name) ---")
+	objectIDToName.Range(func(k, v interface{}) bool {
+		fmt.Fprintf(_tradeLogger.file, "    obj %v = %v\n", k, v)
+		return true
+	})
+	// 2. Latest FULL character-event params per nearby player — lets us match a
+	//    trade param against ANY id field (session id, guid, etc.), not just objId.
+	fmt.Fprintln(_tradeLogger.file, "  --- recent character events (full params, latest per player) ---")
+	charParamCache.Range(func(k, v interface{}) bool {
+		fmt.Fprintf(_tradeLogger.file, "    CHAR %v:\n", k)
+		cp, ok := v.(map[uint8]interface{})
+		if !ok {
+			return true
+		}
+		ckeys := make([]uint8, 0, len(cp))
+		for ck := range cp {
+			if ck == 252 || ck == 253 {
+				continue
+			}
+			ckeys = append(ckeys, ck)
+		}
+		sort.Slice(ckeys, func(i, j int) bool { return ckeys[i] < ckeys[j] })
+		for _, ck := range ckeys {
+			fmt.Fprint(_tradeLogger.file, "    ") // extra indent under CHAR
+			dumpTradeParam(_tradeLogger.file, ck, cp[ck])
+		}
+		return true
+	})
 
 	log.Infof("[TradeDebug] Captured opcode=%d (%s) with %d params → %s",
 		code, tradeEventLabel(code), len(params), filepath.Base(_tradeLogger.filePath))
