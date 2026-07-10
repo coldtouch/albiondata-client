@@ -81,10 +81,18 @@ func (state *albionState) GetAODataServerID() int {
 	return state.AODataServerID
 }
 
+// GetAODataIngestBaseURL resolves the region-specific AODP upload endpoint for
+// the market/map data path. It delegates to GetServer() so VPN/ExitLag users
+// inherit the SAME fallback chain the rest of the client uses: -force-server >
+// live IP detection > server persisted from a prior non-VPN session. Reading
+// the raw AODataIngestBaseURL field directly (as this used to) returned "" for
+// anyone behind a tunnel — the source IP never matches an Albion range, so
+// SetServerFromIP never populates the field — which silently broke market/map
+// uploads even when -force-server was set. For a normal (non-VPN) user
+// GetServer() returns exactly the same URL, so this is behaviour-preserving.
 func (state *albionState) GetAODataIngestBaseURL() string {
-	state.mu.RLock()
-	defer state.mu.RUnlock()
-	return state.AODataIngestBaseURL
+	_, url := state.GetServer()
+	return url
 }
 
 func (state *albionState) GetBanditEventLastTimeSubmitted() time.Time {
