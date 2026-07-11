@@ -266,4 +266,12 @@ func handleTradeEnd(params map[uint8]interface{}, opcode int16) {
 	}
 	log.Infof("[Trade] %s tradeID=%d partner=%s [%s] | local_gave=[%s] | local_received=[%s] (state=%d)",
 		status, tradeID, partner, t.PartnerGuild, t.LocalOffer.String(), t.PartnerOffer.String(), t.LastState)
+
+	// Relay completed trades to the VPS for loot accountability ("looter handed
+	// their pickups to the banker" credit). Cancelled trades carry no signal.
+	// Unknown-partner (initiator-side) trades are still sent — the item data is
+	// real and the backend/frontend label them as unattributed.
+	if status == "completed" && (!t.LocalOffer.IsEmpty() || !t.PartnerOffer.IsEmpty()) {
+		SendPlayerTradeEvent(t)
+	}
 }

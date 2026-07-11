@@ -534,6 +534,73 @@ func SendLootEvent(lootEvent *LootEvent) {
 	}
 }
 
+// TradeItem is one item line in a trade offer (numeric ids; backend re-resolves
+// names via the canonical itemmap, same as loot events).
+type TradeItem struct {
+	NumericID int   `json:"numericId"`
+	Enchant   int   `json:"enchant"`
+	Quantity  int   `json:"quantity"`
+}
+
+// TradeEventMsg is a completed player-to-player trade, relayed for loot
+// accountability ("looter handed their pickups to the banker" credit).
+type PlayerTradeEventMsg struct {
+	TradeID      int32       `json:"tradeId"`
+	SelfName     string      `json:"selfName"`     // the capturing player (us)
+	PartnerName  string      `json:"partnerName"`  // "" when initiator-side (partner id not sent to us)
+	PartnerGuild string      `json:"partnerGuild"`
+	Zone         string      `json:"zone"`
+	Timestamp    int64       `json:"timestamp"`    // Unix millis
+	Gave         []TradeItem `json:"gave"`         // items WE gave the partner
+	Received     []TradeItem `json:"received"`     // items WE received from the partner
+}
+
+// SendTradeEvent relays a completed trade to the VPS. Called from the trade
+// tracker's end handler.
+func SendPlayerTradeEvent(t *ActiveTrade) {
+	if vpsRelay == nil {
+		return
+	}
+	selfName, zone := CombatSelfIdentity()
+	msg := &PlayerTradeEventMsg{
+		TradeID:      t.TradeID,
+		SelfName:     selfName,
+		PartnerName:  t.PartnerName,
+		PartnerGuild: t.PartnerGuild,
+		Zone:         zone,
+		Timestamp:    time.Now().UnixMilli(),
+		Gave:         tradeOfferToItems(t.LocalOffer),
+		Received:     tradeOfferToItems(t.PartnerOffer),
+	}
+	msgJSON, err := buildRelayMessage("trade-event", msg)
+	if err != nil {
+		log.Errorf("[VPSRelay] trade JSON marshal failed: %v", err)
+		return
+	}
+	if vpsRelay.sendOrQueue(msgJSON) {
+		p := t.PartnerName
+		if p == "" {
+			p = "(unknown)"
+		}
+		log.Infof("[VPSRelay] Sent trade event: partner=%s gave=%d received=%d", p, len(msg.Gave), len(msg.Received))
+	}
+}
+
+func tradeOfferToItems(o TradeOffer) []TradeItem {
+	out := make([]TradeItem, 0, len(o.ItemIDs))
+	for i, id := range o.ItemIDs {
+		it := TradeItem{NumericID: int(id), Quantity: 1}
+		if i < len(o.Quantities) {
+			it.Quantity = int(o.Quantities[i])
+		}
+		if i < len(o.Enchants) {
+			it.Enchant = int(o.Enchants[i])
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
 // ChestLogBatch is one page of decoded chest log entries (one response from
 // opcode 157). Sent to the VPS so the website can display per-player deposit
 // ground truth alongside the existing pickup-based accountability flow.

@@ -228,6 +228,16 @@ func CombatSetSelf(objID int64, name, zone string) {
 	}
 }
 
+// CombatSelfIdentity returns our own character name + current zone as recorded
+// from the last opJoin. Used by the trade tracker (whose events don't carry
+// albionState) to stamp who/where a trade happened.
+func CombatSelfIdentity() (name, zone string) {
+	ct := cTracker
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	return ct.selfName, ct.zone
+}
+
 // combatWeaponFor returns the tracked mainhand item id for a player (slot 0
 // of the ev90 equipment snapshot), or "" when unknown.
 func combatWeaponFor(name string) string {
