@@ -338,6 +338,12 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		return nil, nil
 	}
 	recordOpForTradeDebug("RESP", rawCode, params) // trade-ops-debug ring buffer
+	// Initiator-side partner name: the response to op 161 (SetSilverOrGold) fires
+	// when we OPEN a trade and carries the partner identity (opcode 176 doesn't
+	// reach the initiator). Handle before the operation-struct switch below.
+	if OperationType(rawCode) == opPlayerTradeSetSilverOrGold {
+		handlePlayerTradePartnerResponse(params)
+	}
 	code := rawCode
 	shifted := rawCode - opCodeShift
 

@@ -156,6 +156,53 @@ func handleTradeInvitation(params map[uint8]interface{}) {
 		tradeID, name, guild, charID)
 }
 
+// handlePlayerTradePartnerResponse processes the RESPONSE to operation 161
+// (opPlayerTradeSetSilverOrGold), which the game sends to the trade INITIATOR
+// when the trade window opens. It carries the partner identity in the same
+// layout as the 176 invitation — this is how we name the partner on
+// initiator-side trades, where opcode 176 never fires on our client (confirmed
+// in-game 2026-07-11: op 161 resp fired for all 5 initiator trades, param[6]
+// tradeID matches the 179 events').
+//   param[1] = string partner name
+//   param[2] = string partner guild
+//   param[3] = int32  partner character id
+//   param[6] = int32  trade session id
+func handlePlayerTradePartnerResponse(params map[uint8]interface{}) {
+	tradeID := tradeIDFromInvitation(params) // param[6]
+	if tradeID == 0 {
+		return
+	}
+	name, _ := params[1].(string)
+	if name == "" {
+		return
+	}
+	guild, _ := params[2].(string)
+	var charID int32
+	switch v := params[3].(type) {
+	case int32:
+		charID = v
+	case int64:
+		charID = int32(v)
+	case int16:
+		charID = int32(v)
+	}
+
+	_tradeMu.Lock()
+	defer _tradeMu.Unlock()
+	t, ok := _activeTrades[tradeID]
+	if !ok {
+		t = &ActiveTrade{TradeID: tradeID, StartedAt: time.Now().UTC()}
+		_activeTrades[tradeID] = t
+	}
+	// Don't clobber a name already captured from the 176 invitation (receiver side).
+	if t.PartnerName == "" {
+		t.PartnerName = name
+		t.PartnerGuild = guild
+		t.PartnerCharID = charID
+		log.Infof("[Trade] Partner (initiator-side, op161) tradeID=%d partner=%s [%s]", tradeID, name, guild)
+	}
+}
+
 // handleTradeUpdate processes opcode 179. State counter is monotonic per trade,
 // so we always overwrite with the latest snapshot — earlier states are subsets
 // of the final state.
