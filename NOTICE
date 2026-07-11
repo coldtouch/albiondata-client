@@ -1,0 +1,26 @@
+Albion Market Analyzer Client (Coldtouch build)
+================================================
+
+This software is a derivative work built on top of the Albion Data Client,
+an open-source packet-capture client for Albion Online.
+
+  Upstream project : Albion Data Client
+  Upstream source  : https://github.com/ao-data/albiondata-client
+  Upstream license : MIT (see LICENSE)
+  Upstream copyright: Copyright (c) 2017 The Albion Data Project
+
+The upstream project provides the foundational packet-capture and Photon
+protocol-decoding framework (including the vendored photon-spectator library),
+the operation/event routing layer, and the market-data upload infrastructure.
+
+Substantial additions in this build are by Coldtouch, including but not limited
+to: chest/vault capture, the loot logger and accountability pipeline, the combat
+meter, the player-trade tracker, the VPS relay, OAuth device-flow authentication,
+and WinDivert/VPN capture support.
+
+  This build          : Albion Market Analyzer Client
+  Additions copyright : Copyright (c) 2026 Coldtouch
+  Project site        : https://albionaitool.xyz
+
+Per the MIT license, the copyright notices above and the accompanying LICENSE
+file are retained in and distributed with all copies, including binary releases.
