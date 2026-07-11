@@ -207,6 +207,11 @@ func recordTradeEvent(code int16, params map[uint8]interface{}) {
 		return true
 	})
 
+	// Track B: flush the recent-operations ring so the trade-INITIATION op (which
+	// should carry the partner reference on initiator-side trades) is captured
+	// alongside this event.
+	flushRecentOpsToTradeLog(_tradeLogger.file)
+
 	log.Infof("[TradeDebug] Captured opcode=%d (%s) with %d params → %s",
 		code, tradeEventLabel(code), len(params), filepath.Base(_tradeLogger.filePath))
 }

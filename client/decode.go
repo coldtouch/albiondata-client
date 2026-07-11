@@ -239,6 +239,7 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		log.Infof("[Decode] Request param 253 unexpected type: %T = %v", params[253], params[253])
 		return nil, nil
 	}
+	recordOpForTradeDebug("REQ", rawCode, params) // trade-ops-debug ring buffer
 	// Try raw code first, then shifted (-6) for April 2026 update compatibility
 	code := rawCode
 	shifted := rawCode - opCodeShift
@@ -336,6 +337,7 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		log.Infof("[Decode] Response param 253 unexpected type: %T = %v", params[253], params[253])
 		return nil, nil
 	}
+	recordOpForTradeDebug("RESP", rawCode, params) // trade-ops-debug ring buffer
 	code := rawCode
 	shifted := rawCode - opCodeShift
 
