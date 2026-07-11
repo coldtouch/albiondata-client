@@ -80,6 +80,7 @@ type config struct {
 	ListenAllInterfaces            bool   // VPN/ExitLag support: listen on EVERY up adapter (incl. TUN/TAP/virtual)
 	ForceServer                    string // VPN/ExitLag support: pin the game server (west|east|europe) when source IPs are relay IPs
 	ForceWinDivert                 bool   // VPN/ExitLag support: start kernel-level (WFP) capture immediately instead of waiting for auto-escalation. Requires Administrator.
+	TradeDebug                     bool   // Diagnostics: write verbose per-trade packet dumps (events + operation flush) to logs/trade-debug-*.log. Off in normal builds.
 }
 
 // config global config data
@@ -349,6 +350,13 @@ func (config *config) setupCommonFlags() {
 		"windivert",
 		false,
 		"Start kernel-level (WFP) capture immediately — the most robust mode for ExitLag/VPN users. Requires running as Administrator. Without this flag the client tries it automatically after 2 minutes of packet silence.",
+	)
+
+	flag.BoolVar(
+		&config.TradeDebug,
+		"trade-debug",
+		false,
+		"Write verbose player-trade packet dumps to logs/trade-debug-*.log (diagnostics only). Not needed for normal use — the trade tracker works without it.",
 	)
 
 	flag.StringVar(

@@ -239,7 +239,9 @@ func decodeRequest(params map[uint8]interface{}) (operation operation, err error
 		log.Infof("[Decode] Request param 253 unexpected type: %T = %v", params[253], params[253])
 		return nil, nil
 	}
-	recordOpForTradeDebug("REQ", rawCode, params) // trade-ops-debug ring buffer
+	if ConfigGlobal.TradeDebug {
+		recordOpForTradeDebug("REQ", rawCode, params) // trade-ops-debug ring buffer
+	}
 	// Try raw code first, then shifted (-6) for April 2026 update compatibility
 	code := rawCode
 	shifted := rawCode - opCodeShift
@@ -337,10 +339,12 @@ func decodeResponse(params map[uint8]interface{}) (operation operation, err erro
 		log.Infof("[Decode] Response param 253 unexpected type: %T = %v", params[253], params[253])
 		return nil, nil
 	}
-	recordOpForTradeDebug("RESP", rawCode, params) // trade-ops-debug ring buffer
+	if ConfigGlobal.TradeDebug {
+		recordOpForTradeDebug("RESP", rawCode, params) // trade-ops-debug ring buffer
+	}
 	// Initiator-side partner name: the response to op 161 (SetSilverOrGold) fires
 	// when we OPEN a trade and carries the partner identity (opcode 176 doesn't
-	// reach the initiator). Handle before the operation-struct switch below.
+	// reach the initiator). Production path — always on.
 	if OperationType(rawCode) == opPlayerTradeSetSilverOrGold {
 		handlePlayerTradePartnerResponse(params)
 	}
@@ -555,9 +559,13 @@ func decodeEvent(params map[uint8]interface{}) (event operation, err error) {
 		//   1. recordTradeEvent — raw dumper to logs/trade-debug-<ts>.log
 		//      (kept as a safety net for protocol shifts / unknown variants).
 		//   2. trade_tracker — typed state machine that emits structured
-		//      "[Trade] completed tradeID=… partner=… local_gave=… …" lines
-		//      to the main log. Future consumer of WS-relay upload.
-		recordTradeEvent(eventType, params)
+		//      "[Trade] completed …" lines + relays completed trades to the VPS.
+		// The raw dumper (#1) is verbose (per-event nearby-player + op-flush
+		// dumps, ~MBs per trade) so it's gated behind -trade-debug; the typed
+		// tracker (#2, the shipping feature) is always on.
+		if ConfigGlobal.TradeDebug {
+			recordTradeEvent(eventType, params)
+		}
 		switch eventType {
 		case 176:
 			handleTradeInvitation(params)
